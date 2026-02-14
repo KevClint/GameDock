@@ -15,12 +15,22 @@
   "build": {
     "appId": "com.kevclint.gamedock",
     "productName": "GameDock",
-    "directories": { "output": "dist" },
+    "directories": {
+      "output": "dist"
+    },
     "win": {
       "icon": "assets/icon.ico",
-      "target": [{ "target": "portable", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
     },
-    "files": ["**/*", "!node_modules/.cache"],
-    "extraResources": []
+    "files": [
+      "**/*",
+      "!node_modules/.cache",
+      "!*.md"
+    ]
   }
 }
