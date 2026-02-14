@@ -2,7 +2,7 @@
 
 A free, lightweight widget-style game launcher for Windows — lives in the bottom right corner of your desktop.
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
+![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
