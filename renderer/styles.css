@@ -154,7 +154,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
   overflow: hidden;
 }
 
@@ -199,17 +201,36 @@ html, body {
 }
 
 .game-actions button {
-  width: 22px; height: 22px;
+  min-width: 22px; height: 22px;
   border: none; border-radius: 4px;
   background: #ffffff10;
   color: var(--muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10px;
+  padding: 0 6px;
   transition: background 0.15s, color 0.15s;
   display: flex; align-items: center; justify-content: center;
 }
 
 .game-actions button:hover { background: var(--accent); color: white; }
+.game-actions .btn-fav {
+  min-width: 56px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  border: 1px solid #ffffff14;
+}
+.game-actions .btn-fav::before {
+  content: "*";
+  font-size: 10px;
+  margin-right: 4px;
+  opacity: 0.8;
+}
+.game-actions .btn-fav.is-active {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+.game-actions .btn-fav.is-active::before { opacity: 1; }
 .game-actions .btn-del:hover { background: var(--error); color: white; }
 
 .launch-overlay {
@@ -225,15 +246,16 @@ html, body {
   color: var(--accent);
   opacity: 0;
   transition: opacity 0.2s;
+  pointer-events: none;
 }
 
 .game-card:active .launch-overlay { opacity: 1; }
 
-/* ── Bottom Bar ── */
 .bottom-bar {
-  padding: 8px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid #ffffff0d;
+  background: var(--bg-panel);
   flex-shrink: 0;
-  border-top: 1px solid #ffffff08;
 }
 
 .btn-add {
@@ -241,16 +263,17 @@ html, body {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   border: none;
   border-radius: var(--radius);
-  color: white;
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
   font-family: inherit;
-  padding: 9px;
+  padding: 9px 10px;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, transform 0.05s;
 }
 
 .btn-add:hover { opacity: 0.88; }
+.btn-add:active { transform: translateY(1px); }
 
 /* ── Modal ── */
 .modal-overlay {
@@ -346,6 +369,7 @@ html, body {
 }
 
 .setting-row label:first-child { font-size: 12px; color: var(--text); }
+#set-app-version { font-size: 11px; color: var(--muted); }
 
 /* ── Toggle Switch ── */
 .toggle { position: relative; width: 36px; height: 20px; cursor: pointer; }
@@ -474,3 +498,5 @@ body {
 }
 
 #delete-bar-btn:hover { opacity: 0.85; }
+
+

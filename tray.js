@@ -4,7 +4,29 @@ const fs = require('fs');
 
 let tray = null;
 
-function createTray(mainWindow) {
+function buildQuickLaunchItems(getData, launchGameById) {
+  const appData = typeof getData === 'function' ? getData() : { games: [] };
+  const games = Array.isArray(appData.games) ? appData.games : [];
+
+  const quick = [...games]
+    .sort((a, b) => {
+      const favDiff = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+      if (favDiff !== 0) return favDiff;
+      return (b.lastPlayed || 0) - (a.lastPlayed || 0);
+    })
+    .slice(0, 5);
+
+  if (quick.length === 0) {
+    return [{ label: 'No games yet', enabled: false }];
+  }
+
+  return quick.map((game) => ({
+    label: `${game.favorite ? '[*] ' : ''}${game.name}`,
+    click: () => launchGameById(game.id),
+  }));
+}
+
+function createTray(mainWindow, getData, launchGameById) {
   const iconCandidates = [
     path.join(__dirname, 'assets', 'tray-icon.png'),
     path.join(__dirname, 'assets', 'icon.ico')
@@ -20,7 +42,12 @@ function createTray(mainWindow) {
 
   tray.setToolTip('GameDock');
 
-  const menu = Menu.buildFromTemplate([
+  const buildMenu = () => Menu.buildFromTemplate([
+    {
+      label: 'Quick Launch',
+      submenu: buildQuickLaunchItems(getData, launchGameById),
+    },
+    { type: 'separator' },
     {
       label: 'Show GameDock',
       click: () => {
@@ -34,7 +61,7 @@ function createTray(mainWindow) {
     },
     { type: 'separator' },
     {
-      label: 'Quit',
+      label: 'Exit',
       click: () => {
         global.forceQuit = true;
         mainWindow.close();
@@ -42,11 +69,15 @@ function createTray(mainWindow) {
     }
   ]);
 
-  tray.setContextMenu(menu);
+  tray.setContextMenu(buildMenu());
 
   // Single click to toggle
   tray.on('click', () => {
     mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+  });
+
+  tray.on('right-click', () => {
+    tray.popUpContextMenu(buildMenu());
   });
 
   return tray;

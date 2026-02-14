@@ -70,7 +70,16 @@
           <button id="btn-browse">Browse</button>
         </div>
       </div>
+      <div class="modal-field">
+        <label>Launch Arguments (Optional)</label>
+        <input type="text" id="game-args" placeholder="e.g. -novid -dx11"/>
+      </div>
+      <div class="modal-field">
+        <label>Working Directory (Optional)</label>
+        <input type="text" id="game-working-dir" placeholder="Defaults to exe folder"/>
+      </div>
       <div class="modal-actions">
+        <button class="btn-cancel" id="btn-detect-steam">Detect Steam</button>
         <button class="btn-confirm" id="btn-confirm-add">Add Game</button>
         <button class="btn-cancel"  id="btn-cancel-add">Cancel</button>
       </div>
@@ -101,6 +110,14 @@
           <input type="checkbox" id="set-minimize-tray" checked/>
           <span class="slider"></span>
         </label>
+      </div>
+      <div class="setting-row">
+        <label>Version</label>
+        <label id="set-app-version">-</label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="btn-export-backup">Export Backup</button>
+        <button class="btn-cancel" id="btn-import-backup">Import Backup</button>
       </div>
       <div class="modal-actions">
         <button class="btn-confirm" id="btn-save-settings">Save</button>
