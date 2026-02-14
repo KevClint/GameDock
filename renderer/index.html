@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>GameDock</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+  <!-- Title Bar -->
+  <div class="title-bar">
+    <div class="title-left">
+      <span class="logo">🎮</span>
+      <span class="logo-text">GameDock</span>
+    </div>
+    <div class="title-actions">
+      <button id="btn-settings" title="Settings">⚙</button>
+      <button id="btn-hide"     title="Hide to tray">—</button>
+      <button id="btn-close"    title="Quit" class="close">✕</button>
+    </div>
+  </div>
+
+  <!-- Search -->
+  <div class="search-wrap">
+    <input type="text" id="search-input" placeholder="🔍 Search games..."/>
+  </div>
+
+  <!-- Category Filter -->
+  <div class="categories" id="categories">
+    <button class="cat-btn active" data-cat="all">All</button>
+    <button class="cat-btn" data-cat="FPS">FPS</button>
+    <button class="cat-btn" data-cat="MOBA">MOBA</button>
+    <button class="cat-btn" data-cat="RPG">RPG</button>
+    <button class="cat-btn" data-cat="RTS">RTS</button>
+    <button class="cat-btn" data-cat="Other">Other</button>
+  </div>
+
+  <!-- Game List -->
+  <div class="game-list" id="game-list"></div>
+
+  <!-- Add Game Button -->
+  <div class="bottom-bar">
+    <button class="btn-add" id="btn-add-game">+ Add Game</button>
+  </div>
+
+  <!-- Add Game Modal -->
+  <div class="modal-overlay" id="modal-overlay" style="display:none">
+    <div class="modal">
+      <h3>Add Game</h3>
+      <div class="modal-field">
+        <label>Game Name</label>
+        <input type="text" id="game-name" placeholder="e.g. Valorant"/>
+      </div>
+      <div class="modal-field">
+        <label>Category</label>
+        <select id="game-category">
+          <option value="FPS">🎯 FPS</option>
+          <option value="MOBA">⚔️ MOBA</option>
+          <option value="RPG">🧙 RPG</option>
+          <option value="RTS">🏰 RTS</option>
+          <option value="Other">🎮 Other</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>Game Executable</label>
+        <div class="path-row">
+          <input type="text" id="game-path" placeholder="Path to .exe..." readonly/>
+          <button id="btn-browse">Browse</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-confirm" id="btn-confirm-add">Add Game</button>
+        <button class="btn-cancel"  id="btn-cancel-add">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-overlay" style="display:none">
+    <div class="modal">
+      <h3>⚙ Settings</h3>
+      <div class="setting-row">
+        <label>Always on Top</label>
+        <label class="toggle">
+          <input type="checkbox" id="set-always-on-top"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <label>Start with Windows</label>
+        <label class="toggle">
+          <input type="checkbox" id="set-auto-start"/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <label>Minimize to Tray</label>
+        <label class="toggle">
+          <input type="checkbox" id="set-minimize-tray" checked/>
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-confirm" id="btn-save-settings">Save</button>
+        <button class="btn-cancel"  id="btn-close-settings">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
