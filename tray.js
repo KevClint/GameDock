@@ -1,12 +1,17 @@
 const { Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let tray = null;
 
 function createTray(mainWindow) {
-  // Use a simple fallback if no icon exists
-  const iconPath = path.join(__dirname, 'assets', 'tray-icon.png');
-  const icon = nativeImage.createFromPath(iconPath);
+  const iconCandidates = [
+    path.join(__dirname, 'assets', 'tray-icon.png'),
+    path.join(__dirname, 'assets', 'icon.ico')
+  ];
+
+  const iconPath = iconCandidates.find((p) => fs.existsSync(p));
+  const icon = iconPath ? nativeImage.createFromPath(iconPath) : nativeImage.createEmpty();
 
   tray = new Tray(icon.isEmpty()
     ? nativeImage.createEmpty()
