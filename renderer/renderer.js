@@ -1,7 +1,7 @@
 let appData = { games: [], settings: { autoStart: false, minimizeToTray: true } };
 let activeCategory = 'all';
 let searchQuery = '';
-let selectedGameId = null;
+let selectedGameIds = new Set();
 
 async function init() {
   appData = (await window.api.getData()) || appData;
@@ -52,16 +52,27 @@ function setupCategories() {
   });
 }
 
-function selectGame(id) {
-  selectedGameId = id;
+function toggleGameSelection(id) {
+  const gameId = Number(id);
+  if (!Number.isFinite(gameId)) return;
+  if (selectedGameIds.has(gameId)) selectedGameIds.delete(gameId);
+  else selectedGameIds.add(gameId);
   renderGames();
-  showDeleteBar();
+  if (selectedGameIds.size > 0) showDeleteBar();
+  else hideDeleteBar();
 }
 
-function deselectGame() {
-  selectedGameId = null;
+function deselectGame(id = null) {
+  if (id === null || id === undefined) {
+    selectedGameIds = new Set();
+  } else {
+    const gameId = Number(id);
+    if (!Number.isFinite(gameId)) return;
+    selectedGameIds.delete(gameId);
+  }
   renderGames();
-  hideDeleteBar();
+  if (selectedGameIds.size === 0) hideDeleteBar();
+  else showDeleteBar();
 }
 
 function showDeleteBar() {
@@ -76,26 +87,42 @@ function showDeleteBar() {
 
     const removeBtn = document.createElement('button');
     removeBtn.id = 'delete-bar-btn';
-    removeBtn.textContent = 'Remove';
+    removeBtn.textContent = 'Remove Selected';
     removeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const game = appData.games.find((g) => g.id === selectedGameId);
-      if (!game) return;
-      if (confirm(`Remove "${game.name}" from GameDock?`)) {
-        await deleteGame(selectedGameId);
+      const ids = [...selectedGameIds];
+      if (ids.length === 0) return;
+
+      const selectedGames = appData.games.filter((g) => selectedGameIds.has(g.id));
+      const prompt = selectedGames.length === 1
+        ? `Remove "${selectedGames[0].name}" from GameDock?`
+        : `Remove ${selectedGames.length} games from GameDock?`;
+
+      if (confirm(prompt)) {
+        await deleteGames(ids);
         deselectGame();
       }
     });
     bar.appendChild(removeBtn);
 
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = 'delete-bar-cancel';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deselectGame();
+    });
+    bar.appendChild(cancelBtn);
+
     const bottomBar = document.querySelector('.bottom-bar');
     bottomBar.parentNode.insertBefore(bar, bottomBar);
   }
 
-  const game = appData.games.find((g) => g.id === selectedGameId);
-  if (game) {
-    document.getElementById('delete-bar-name').textContent = game.name;
-  }
+  const selectedGames = appData.games.filter((g) => selectedGameIds.has(g.id));
+  const title = selectedGames.length === 1
+    ? selectedGames[0].name
+    : `${selectedGames.length} games selected`;
+  document.getElementById('delete-bar-name').textContent = title;
   bar.classList.add('visible');
 }
 
@@ -158,7 +185,7 @@ function renderGames() {
 
   games.forEach((game) => {
     const card = document.createElement('div');
-    const isSelected = game.id === selectedGameId;
+    const isSelected = selectedGameIds.has(game.id);
     card.className = `game-card ${isSelected ? 'selected' : ''}`;
     card.id = `game-${game.id}`;
 
@@ -186,7 +213,8 @@ function renderGames() {
     fav.type = 'button';
     fav.className = `btn-fav ${game.favorite ? 'is-active' : ''}`;
     fav.title = game.favorite ? 'Unfavorite' : 'Favorite';
-    fav.textContent = game.favorite ? 'Starred' : 'Star';
+    fav.setAttribute('aria-label', fav.title);
+    fav.textContent = game.favorite ? '★' : '☆';
     fav.addEventListener('click', async (e) => {
       e.stopPropagation();
       const result = await window.api.toggleFavorite(game.id);
@@ -199,6 +227,32 @@ function renderGames() {
     });
     actions.appendChild(fav);
 
+    const selectBtn = document.createElement('button');
+    selectBtn.type = 'button';
+    selectBtn.className = `btn-select ${isSelected ? 'is-active' : ''}`;
+    selectBtn.title = isSelected ? 'Unselect' : 'Select';
+    selectBtn.setAttribute('aria-label', selectBtn.title);
+    selectBtn.textContent = isSelected ? '✓' : '☐';
+    selectBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleGameSelection(game.id);
+    });
+    actions.appendChild(selectBtn);
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'btn-del';
+    del.title = 'Delete';
+    del.setAttribute('aria-label', del.title);
+    del.textContent = '✕';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Remove "${game.name}" from GameDock?`)) return;
+      await deleteGame(game.id);
+      deselectGame(game.id);
+    });
+    actions.appendChild(del);
+
     const overlay = document.createElement('div');
     overlay.className = 'launch-overlay';
     overlay.textContent = 'Launching...';
@@ -207,18 +261,14 @@ function renderGames() {
 
     card.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (isSelected) {
-        deselectGame();
-      } else {
-        launchGame(game);
-      }
+      if (selectedGameIds.size > 0) toggleGameSelection(game.id);
+      else launchGame(game);
     });
 
     card.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (selectedGameId === game.id) deselectGame();
-      else selectGame(game.id);
+      toggleGameSelection(game.id);
     });
 
     list.appendChild(card);
@@ -238,10 +288,22 @@ async function launchGame(game) {
 }
 
 async function deleteGame(id) {
-  appData.games = appData.games.filter((g) => g.id !== id);
+  await deleteGames([id]);
+}
+
+async function deleteGames(ids) {
+  const uniqueIds = new Set((ids || []).map(Number).filter(Number.isFinite));
+  if (uniqueIds.size === 0) return;
+
+  const before = appData.games.length;
+  appData.games = appData.games.filter((g) => !uniqueIds.has(g.id));
+  const removedCount = before - appData.games.length;
+  if (removedCount <= 0) return;
+
+  uniqueIds.forEach((id) => selectedGameIds.delete(id));
   await save();
   renderGames();
-  showToast('Game removed', 'success');
+  showToast(removedCount === 1 ? 'Game removed' : `${removedCount} games removed`, 'success');
 }
 
 async function addDetectedSteamGames() {
@@ -269,12 +331,25 @@ async function addDetectedSteamGames() {
 }
 
 function setupAddGame() {
+  const advancedOptions = document.getElementById('advanced-options');
+  const toggleAdvancedBtn = document.getElementById('btn-toggle-advanced');
+  const setAdvancedVisible = (visible) => {
+    advancedOptions.classList.toggle('hidden', !visible);
+    toggleAdvancedBtn.textContent = visible ? 'Hide Advanced' : 'Show Advanced';
+  };
+
+  toggleAdvancedBtn.onclick = () => {
+    const isHidden = advancedOptions.classList.contains('hidden');
+    setAdvancedVisible(isHidden);
+  };
+
   document.getElementById('btn-add-game').onclick = () => {
     document.getElementById('game-name').value = '';
     document.getElementById('game-path').value = '';
     document.getElementById('game-category').value = 'FPS';
     document.getElementById('game-args').value = '';
     document.getElementById('game-working-dir').value = '';
+    setAdvancedVisible(false);
     document.getElementById('modal-overlay').style.display = 'flex';
   };
 

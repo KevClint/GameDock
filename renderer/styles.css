@@ -144,6 +144,7 @@ html, body {
 }
 
 .game-card:hover .game-actions { opacity: 1; }
+.game-card.selected .game-actions { opacity: 1; }
 
 .game-icon {
   width: 36px; height: 36px;
@@ -214,23 +215,29 @@ html, body {
 
 .game-actions button:hover { background: var(--accent); color: white; }
 .game-actions .btn-fav {
-  min-width: 56px;
+  min-width: 22px;
   font-weight: 700;
-  letter-spacing: 0.2px;
   border: 1px solid #ffffff14;
-}
-.game-actions .btn-fav::before {
-  content: "*";
-  font-size: 10px;
-  margin-right: 4px;
-  opacity: 0.8;
 }
 .game-actions .btn-fav.is-active {
   background: var(--accent);
   color: #fff;
   border-color: transparent;
 }
-.game-actions .btn-fav.is-active::before { opacity: 1; }
+.game-actions .btn-select {
+  min-width: 22px;
+  font-weight: 700;
+  border: 1px solid #ffffff14;
+}
+.game-actions .btn-select.is-active {
+  background: #22c55e22;
+  border-color: #22c55e;
+  color: #86efac;
+}
+.game-actions .btn-del {
+  min-width: 22px;
+  font-weight: 700;
+}
 .game-actions .btn-del:hover { background: var(--error); color: white; }
 
 .launch-overlay {
@@ -337,6 +344,8 @@ html, body {
 .path-row button:hover { background: var(--bg-hover); }
 
 .modal-actions { display: flex; gap: 6px; }
+.advanced-options { display: flex; flex-direction: column; gap: 12px; }
+.advanced-options.hidden { display: none; }
 
 .btn-confirm {
   flex: 1;
@@ -498,5 +507,22 @@ body {
 }
 
 #delete-bar-btn:hover { opacity: 0.85; }
+
+#delete-bar-cancel {
+  background: #ffffff14;
+  border: 1px solid #ffffff1f;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+#delete-bar-cancel:hover { opacity: 0.85; }
 
 

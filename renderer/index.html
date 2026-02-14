@@ -70,13 +70,18 @@
           <button id="btn-browse">Browse</button>
         </div>
       </div>
-      <div class="modal-field">
-        <label>Launch Arguments (Optional)</label>
-        <input type="text" id="game-args" placeholder="e.g. -novid -dx11"/>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="btn-toggle-advanced" type="button">Show Advanced</button>
       </div>
-      <div class="modal-field">
-        <label>Working Directory (Optional)</label>
-        <input type="text" id="game-working-dir" placeholder="Defaults to exe folder"/>
+      <div id="advanced-options" class="advanced-options hidden">
+        <div class="modal-field">
+          <label>Launch Arguments (Optional)</label>
+          <input type="text" id="game-args" placeholder="e.g. -novid -dx11"/>
+        </div>
+        <div class="modal-field">
+          <label>Working Directory (Optional)</label>
+          <input type="text" id="game-working-dir" placeholder="Defaults to exe folder"/>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn-cancel" id="btn-detect-steam">Detect Steam</button>
