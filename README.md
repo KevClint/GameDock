@@ -8,6 +8,7 @@ A free, lightweight widget-style game launcher for Windows — lives in the bott
 <img width="276" height="599" alt="Screenshot 2026-02-15 110519" src="https://github.com/user-attachments/assets/5a33c464-37dc-4908-a1ac-9bd71bb246c3" />
 <img width="274" height="596" alt="Screenshot 2026-02-15 110528" src="https://github.com/user-attachments/assets/c678cc4c-803b-409c-9c4c-0d8df0776561" />
 <img width="274" height="597" alt="Screenshot 2026-02-15 110536" src="https://github.com/user-attachments/assets/3d7a1693-46c2-4808-b1da-ca9d013284d3" />
+<img width="274" height="597" alt="Screenshot 2026-02-15 110625" src="https://github.com/user-attachments/assets/3ff03c76-c783-443e-93a8-0eeb19d8cc1a" />
 
 ---
 
