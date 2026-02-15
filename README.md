@@ -1,10 +1,13 @@
-# 🎮 GameDock
-
-A free, lightweight widget-style game launcher for Windows — lives in the bottom right corner of your desktop.
-
+# GameDock
 ![Version](https://img.shields.io/badge/version-2.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+A free, lightweight widget-style game launcher for Windows — lives in the bottom right corner of your desktop.
+
+<img width="276" height="599" alt="Screenshot 2026-02-15 110519" src="https://github.com/user-attachments/assets/5a33c464-37dc-4908-a1ac-9bd71bb246c3" />
+<img width="274" height="596" alt="Screenshot 2026-02-15 110528" src="https://github.com/user-attachments/assets/c678cc4c-803b-409c-9c4c-0d8df0776561" />
+<img width="274" height="597" alt="Screenshot 2026-02-15 110536" src="https://github.com/user-attachments/assets/3d7a1693-46c2-4808-b1da-ca9d013284d3" />
 
 ---
 
