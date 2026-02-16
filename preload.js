@@ -9,6 +9,7 @@ const api = Object.freeze({
   getAppInfo:    ()       => ipcRenderer.invoke('get-app-info'),
   getRawgKey:    ()       => ipcRenderer.invoke('get-rawg-key'),
   getRawgDiscoveryGames: () => ipcRenderer.invoke('rawg-discovery-games'),
+  getCommunityNews: ()    => ipcRenderer.invoke('community-news'),
   detectSteamGames: ()    => ipcRenderer.invoke('detect-steam-games'),
 
   // Games

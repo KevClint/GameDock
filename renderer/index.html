@@ -135,93 +135,89 @@
           </div>
         </div>
       </section>
-
       <section id="view-community" class="view-panel" hidden>
-        <div class="community-shell">
-          <div class="community-feed">
+        <div class="community-layout">
+          <section class="community-feed-col">
             <div class="view-block-header">
-              <h3>Community Feed</h3>
-              <span class="meta-text">Live updates</span>
+              <h3>
+                <span class="material-symbols-outlined">rss_feed</span>
+                The Feed
+              </h3>
+              <span class="meta-text">Latest gaming headlines</span>
             </div>
+            <div id="community-feed-list" class="community-feed-list"></div>
+          </section>
 
-            <article class="feed-card">
-              <div class="feed-media fm-1"></div>
-              <div class="feed-content">
-                <div class="feed-title">Patch 2.3: Ranked Overhaul is now live</div>
-                <p class="feed-snippet">Competitive matchmaking now uses role confidence and includes map veto in Diamond+ tiers.</p>
-                <div class="feed-meta">Orbital Rift • 18 min ago</div>
+          <aside class="social-dock">
+            <section class="profile-header">
+              <div class="profile-avatar">CL</div>
+              <div class="profile-copy">
+                <div class="profile-name">Clint Lorenzo</div>
+                <div class="profile-status">
+                  <span class="status-dot online"></span>
+                  Online
+                </div>
               </div>
-            </article>
+            </section>
 
-            <article class="feed-card">
-              <div class="feed-media fm-2"></div>
-              <div class="feed-content">
-                <div class="feed-title">Community Post: Best loadouts for Neon District</div>
-                <p class="feed-snippet">Top creators shared their high-mobility builds for close-quarter objective fights.</p>
-                <div class="feed-meta">Cyberstrike Hub • 44 min ago</div>
+            <section class="social-group">
+              <div class="social-title">
+                <span class="material-symbols-outlined">person</span>
+                Friends
               </div>
-            </article>
 
-            <article class="feed-card">
-              <div class="feed-media fm-3"></div>
-              <div class="feed-content">
-                <div class="feed-title">Season Event: Frostline starts this weekend</div>
-                <p class="feed-snippet">Earn limited emotes and weapon skins through co-op challenge tracks.</p>
-                <div class="feed-meta">Ember Arena • 1h ago</div>
+              <div class="friend-row">
+                <div class="friend-avatar">RM</div>
+                <div class="friend-text">
+                  <div class="friend-name">Rina Madsen</div>
+                  <div class="friend-game">Playing: Cyberpunk 2077</div>
+                </div>
+                <span class="friend-status online"></span>
               </div>
-            </article>
-          </div>
+              <div class="friend-row">
+                <div class="friend-avatar">JT</div>
+                <div class="friend-text">
+                  <div class="friend-name">J. Tanaka</div>
+                  <div class="friend-game">Away: In Main Menu</div>
+                </div>
+                <span class="friend-status away"></span>
+              </div>
+              <div class="friend-row">
+                <div class="friend-avatar">NF</div>
+                <div class="friend-text">
+                  <div class="friend-name">N. Flores</div>
+                  <div class="friend-game">Playing: Baldur's Gate 3</div>
+                </div>
+                <span class="friend-status online"></span>
+              </div>
+              <div class="friend-row">
+                <div class="friend-avatar">AB</div>
+                <div class="friend-text">
+                  <div class="friend-name">Ava Brooks</div>
+                  <div class="friend-game">Offline</div>
+                </div>
+                <span class="friend-status offline"></span>
+              </div>
+              <div class="friend-row">
+                <div class="friend-avatar">MK</div>
+                <div class="friend-text">
+                  <div class="friend-name">Miko K.</div>
+                  <div class="friend-game">Playing: Helldivers 2</div>
+                </div>
+                <span class="friend-status online"></span>
+              </div>
+            </section>
 
-          <aside class="friends-panel">
-            <div class="view-block-header">
-              <h3>Friends</h3>
-              <span class="meta-text">12 online</span>
-            </div>
-
-            <div class="friend-row">
-              <div class="friend-avatar">CL</div>
-              <div class="friend-text">
-                <div class="friend-name">Clint Lorenzo</div>
-                <div class="friend-game">In Orbital Rift</div>
+            <section class="community-stats">
+              <div class="social-title">
+                <span class="material-symbols-outlined">groups</span>
+                Global Activity
               </div>
-              <span class="friend-status online"></span>
-            </div>
-            <div class="friend-row">
-              <div class="friend-avatar">RM</div>
-              <div class="friend-text">
-                <div class="friend-name">Rina Madsen</div>
-                <div class="friend-game">Online</div>
-              </div>
-              <span class="friend-status online"></span>
-            </div>
-            <div class="friend-row">
-              <div class="friend-avatar">JT</div>
-              <div class="friend-text">
-                <div class="friend-name">J. Tanaka</div>
-                <div class="friend-game">Away</div>
-              </div>
-              <span class="friend-status offline"></span>
-            </div>
-            <div class="friend-row">
-              <div class="friend-avatar">NF</div>
-              <div class="friend-text">
-                <div class="friend-name">N. Flores</div>
-                <div class="friend-game">In Kingdom Cipher</div>
-              </div>
-              <span class="friend-status online"></span>
-            </div>
-            <div class="friend-row">
-              <div class="friend-avatar">AB</div>
-              <div class="friend-text">
-                <div class="friend-name">Ava Brooks</div>
-                <div class="friend-game">Offline</div>
-              </div>
-              <span class="friend-status offline"></span>
-            </div>
+              <div class="stats-value">1,240 Users Online Now</div>
+            </section>
           </aside>
         </div>
       </section>
-
       <section id="view-settings" class="view-panel" hidden>
         <div class="settings-shell">
           <div class="settings-nav">
@@ -412,5 +408,7 @@
   <script src="renderer.js"></script>
 </body>
 </html>
+
+
 
 

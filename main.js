@@ -301,6 +301,23 @@ function readRawgApiKey() {
   }
 }
 
+function readNewsApiKey() {
+  if (process.env.NEWS_API_KEY) {
+    return String(process.env.NEWS_API_KEY).trim();
+  }
+
+  try {
+    const envPath = path.join(app.getAppPath(), '.env');
+    if (!fs.existsSync(envPath)) return '';
+    const envRaw = fs.readFileSync(envPath, 'utf8');
+    const match = envRaw.match(/^\s*NEWS_API_KEY\s*=\s*(.+)\s*$/m);
+    if (!match) return '';
+    return match[1].trim().replace(/^['"]|['"]$/g, '');
+  } catch {
+    return '';
+  }
+}
+
 app.whenReady().then(() => {
   if (appData.settings?.autoStart) {
     app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
@@ -424,6 +441,46 @@ ipcMain.handle('rawg-discovery-games', async () => {
       return { success: false, error: 'RAWG request timed out after 12s' };
     }
     return { success: false, error: err?.message || 'Network request failed' };
+  }
+});
+
+ipcMain.handle('community-news', async () => {
+  const apiKey = readNewsApiKey();
+  if (!apiKey) {
+    return { success: false, error: 'Missing NEWS_API_KEY in .env', articles: [] };
+  }
+
+  const params = new URLSearchParams({
+    q: 'gaming OR videogames',
+    language: 'en',
+    sortBy: 'publishedAt',
+    pageSize: '12',
+    apiKey,
+  });
+
+  try {
+    const res = await fetch(`https://newsapi.org/v2/everything?${params.toString()}`);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      return {
+        success: false,
+        error: `NewsAPI failed (${res.status}) ${errText}`.trim(),
+        articles: [],
+      };
+    }
+
+    const payload = await res.json();
+    const articles = (payload?.articles || []).map((item) => ({
+      source: item?.source?.name || 'Gaming News',
+      title: item?.title || 'Untitled',
+      snippet: item?.description || 'No summary available.',
+      url: item?.url || '',
+      publishedAt: item?.publishedAt || '',
+    }));
+
+    return { success: true, articles };
+  } catch (err) {
+    return { success: false, error: err?.message || 'Failed to fetch community news', articles: [] };
   }
 });
 

@@ -9,6 +9,31 @@ let discoveryLoading = false;
 const DISCOVERY_CACHE_KEY = 'gamedock.discovery.cache.v1';
 const DISCOVERY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const discoveryEntryTimers = new Set();
+let communityLoaded = false;
+
+const MOCK_COMMUNITY_ARTICLES = [
+  {
+    source: 'IGN',
+    title: 'Helldivers 2 Devs Tease New Galactic Threat Event',
+    snippet: 'Arrowhead hinted at a larger-scale war update with new enemy classes and weekly objectives.',
+    url: 'https://www.ign.com',
+    publishedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+  },
+  {
+    source: 'PC Gamer',
+    title: 'Cyberpunk 2077 Mod Pack Dramatically Improves NPC Behavior',
+    snippet: 'A community overhaul mod is gaining traction for making city encounters less scripted and more reactive.',
+    url: 'https://www.pcgamer.com',
+    publishedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
+  },
+  {
+    source: 'Kotaku',
+    title: 'Indie RPG Showcase Highlights 12 Upcoming Tactical Hits',
+    snippet: 'Studios revealed a batch of strategy-heavy RPGs focused on party builds and high replay value.',
+    url: 'https://kotaku.com',
+    publishedAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString(),
+  },
+];
 
 async function init() {
   appData = (await window.api.getData()) || appData;
@@ -91,6 +116,7 @@ function setActiveView(viewName) {
 
   if (viewName !== 'library') hideDeleteBar();
   if (viewName === 'discover') void loadDiscovery(false);
+  if (viewName === 'community') void loadCommunityNews(false);
 }
 
 function escapeHtml(value) {
@@ -280,6 +306,7 @@ function teardownDiscoveryView() {
   if (heroEl) heroEl.textContent = '';
   if (trendingGrid) trendingGrid.textContent = '';
   if (indieGrid) indieGrid.textContent = '';
+  discoveryLoaded = false;
 }
 
 function renderGameCards(data) {
@@ -367,6 +394,98 @@ function setDiscoveryOfflineMessage(message) {
   const offlineMessage = document.getElementById('discovery-offline-message');
   if (offlineMessage) {
     offlineMessage.textContent = message || 'Check your RAWG API key or network and try again.';
+  }
+}
+
+function formatPublishedAgo(isoDate) {
+  const ts = Date.parse(isoDate || '');
+  if (!Number.isFinite(ts)) return 'just now';
+  const mins = Math.max(1, Math.floor((Date.now() - ts) / 60000));
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function normalizeArticle(article) {
+  return {
+    source: article?.source || 'Gaming News',
+    title: article?.title || 'Untitled',
+    snippet: article?.snippet || 'No summary available.',
+    url: article?.url || '#',
+    publishedAt: article?.publishedAt || new Date().toISOString(),
+  };
+}
+
+function renderNewsFeed(articles) {
+  const list = document.getElementById('community-feed-list');
+  if (!list) return;
+  list.textContent = '';
+
+  const normalized = (articles || []).map(normalizeArticle);
+  if (normalized.length === 0) {
+    const empty = document.createElement('article');
+    empty.className = 'feed-card';
+    empty.innerHTML = `
+      <div class="feed-source">Community</div>
+      <div class="feed-title">No news available</div>
+      <p class="feed-snippet">Try again in a moment. Feed sources may be temporarily unavailable.</p>
+    `;
+    list.appendChild(empty);
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  normalized.forEach((a) => {
+    const card = document.createElement('article');
+    card.className = 'feed-card';
+    card.innerHTML = `
+      <div class="feed-source">${escapeHtml(a.source)} • ${escapeHtml(formatPublishedAgo(a.publishedAt))}</div>
+      <div class="feed-title">${escapeHtml(a.title)}</div>
+      <p class="feed-snippet">${escapeHtml(a.snippet)}</p>
+      <div class="feed-actions">
+        <a class="feed-read" href="${escapeHtml(a.url)}" target="_blank" rel="noreferrer noopener">Read More</a>
+        <button class="feed-share" type="button" title="Share">
+          <span class="material-symbols-outlined">share</span>
+        </button>
+      </div>
+    `;
+
+    const shareBtn = card.querySelector('.feed-share');
+    if (shareBtn) {
+      shareBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(a.url);
+          showToast('Link copied', 'success');
+        } catch {
+          showToast('Could not copy link', 'error');
+        }
+      });
+    }
+
+    frag.appendChild(card);
+  });
+
+  list.appendChild(frag);
+}
+
+async function loadCommunityNews(force = false) {
+  if (communityLoaded && !force) return;
+
+  try {
+    const res = await window.api.getCommunityNews?.();
+    if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
+      renderNewsFeed(res.articles);
+    } else {
+      renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
+      if (res?.error) console.warn('Community news fallback:', res.error);
+    }
+  } catch (err) {
+    console.warn('Community feed failed, using mock data:', err);
+    renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
+  } finally {
+    communityLoaded = true;
   }
 }
 
