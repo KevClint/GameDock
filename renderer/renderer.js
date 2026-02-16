@@ -521,16 +521,6 @@ async function loadDiscovery(forceRefresh = false) {
 function setupTitleBar() {
   document.getElementById('btn-hide').onclick = () => window.api.hideWindow();
   document.getElementById('btn-close').onclick = () => window.api.closeWindow();
-  document.getElementById('btn-settings').onclick = async () => {
-    const s = appData.settings || {};
-    document.getElementById('set-always-on-top').checked = Boolean(s.alwaysOnTop);
-    document.getElementById('set-auto-start').checked = Boolean(s.autoStart);
-    document.getElementById('set-minimize-tray').checked = s.minimizeToTray !== false;
-
-    const info = await window.api.getAppInfo();
-    document.getElementById('set-app-version').textContent = `${info.name} ${info.version}`;
-    document.getElementById('settings-overlay').style.display = 'flex';
-  };
 }
 
 function setupSearch() {
@@ -967,6 +957,24 @@ function setupAddGame() {
 }
 
 function setupSettings() {
+  const s = appData.settings || {};
+  const alwaysOnTopEl = document.getElementById('set-always-on-top');
+  const autoStartEl = document.getElementById('set-auto-start');
+  const minimizeTrayEl = document.getElementById('set-minimize-tray');
+  const appVersionEl = document.getElementById('set-app-version');
+
+  if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(s.alwaysOnTop);
+  if (autoStartEl) autoStartEl.checked = Boolean(s.autoStart);
+  if (minimizeTrayEl) minimizeTrayEl.checked = s.minimizeToTray !== false;
+
+  window.api.getAppInfo()
+    .then((info) => {
+      if (appVersionEl) appVersionEl.textContent = `${info.name} ${info.version}`;
+    })
+    .catch(() => {
+      if (appVersionEl) appVersionEl.textContent = 'Unavailable';
+    });
+
   document.getElementById('btn-save-settings').onclick = async () => {
     const alwaysOnTop = document.getElementById('set-always-on-top').checked;
     const autoStart = document.getElementById('set-auto-start').checked;
@@ -979,8 +987,6 @@ function setupSettings() {
     await window.api.toggleAlwaysOnTop(alwaysOnTop);
     await window.api.toggleAutoStart(autoStart);
     await save();
-
-    document.getElementById('settings-overlay').style.display = 'none';
     showToast('Settings saved', 'success');
   };
 
@@ -994,26 +1000,15 @@ function setupSettings() {
     const res = await window.api.importData();
     if (res.success) {
       appData = res.data || (await window.api.getData());
+      if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(appData.settings?.alwaysOnTop);
+      if (autoStartEl) autoStartEl.checked = Boolean(appData.settings?.autoStart);
+      if (minimizeTrayEl) minimizeTrayEl.checked = appData.settings?.minimizeToTray !== false;
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
       showToast(res.error || 'Import failed', 'error');
     }
   };
-
-  document.getElementById('btn-close-settings').onclick = () => {
-    document.getElementById('settings-overlay').style.display = 'none';
-  };
-
-  document.getElementById('settings-close-btn').onclick = () => {
-    document.getElementById('settings-overlay').style.display = 'none';
-  };
-
-  document.getElementById('settings-overlay').addEventListener('click', (e) => {
-    if (e.target.id === 'settings-overlay') {
-      document.getElementById('settings-overlay').style.display = 'none';
-    }
-  });
 }
 
 async function save() {

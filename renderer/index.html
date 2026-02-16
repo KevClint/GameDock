@@ -57,9 +57,6 @@
       <header class="content-header">
         <div class="header-left">
           <h1 class="header-title">GameDock</h1>
-          <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
-            <span class="material-symbols-outlined">settings</span>
-          </button>
         </div>
 
         <div class="header-actions">
@@ -147,116 +144,72 @@
             </div>
             <div id="community-feed-list" class="community-feed-list"></div>
           </section>
-
-          <aside class="social-dock">
-            <section class="profile-header">
-              <div class="profile-avatar">CL</div>
-              <div class="profile-copy">
-                <div class="profile-name">Clint Lorenzo</div>
-                <div class="profile-status">
-                  <span class="status-dot online"></span>
-                  Online
-                </div>
-              </div>
-            </section>
-
-            <section class="social-group">
-              <div class="social-title">
-                <span class="material-symbols-outlined">person</span>
-                Friends
-              </div>
-
-              <div class="friend-row">
-                <div class="friend-avatar">RM</div>
-                <div class="friend-text">
-                  <div class="friend-name">Rina Madsen</div>
-                  <div class="friend-game">Playing: Cyberpunk 2077</div>
-                </div>
-                <span class="friend-status online"></span>
-              </div>
-              <div class="friend-row">
-                <div class="friend-avatar">JT</div>
-                <div class="friend-text">
-                  <div class="friend-name">J. Tanaka</div>
-                  <div class="friend-game">Away: In Main Menu</div>
-                </div>
-                <span class="friend-status away"></span>
-              </div>
-              <div class="friend-row">
-                <div class="friend-avatar">NF</div>
-                <div class="friend-text">
-                  <div class="friend-name">N. Flores</div>
-                  <div class="friend-game">Playing: Baldur's Gate 3</div>
-                </div>
-                <span class="friend-status online"></span>
-              </div>
-              <div class="friend-row">
-                <div class="friend-avatar">AB</div>
-                <div class="friend-text">
-                  <div class="friend-name">Ava Brooks</div>
-                  <div class="friend-game">Offline</div>
-                </div>
-                <span class="friend-status offline"></span>
-              </div>
-              <div class="friend-row">
-                <div class="friend-avatar">MK</div>
-                <div class="friend-text">
-                  <div class="friend-name">Miko K.</div>
-                  <div class="friend-game">Playing: Helldivers 2</div>
-                </div>
-                <span class="friend-status online"></span>
-              </div>
-            </section>
-
-            <section class="community-stats">
-              <div class="social-title">
-                <span class="material-symbols-outlined">groups</span>
-                Global Activity
-              </div>
-              <div class="stats-value">1,240 Users Online Now</div>
-            </section>
-          </aside>
         </div>
       </section>
       <section id="view-settings" class="view-panel" hidden>
         <div class="settings-shell">
           <div class="settings-nav">
             <button class="settings-tab active">General</button>
-            <button class="settings-tab">Library</button>
             <button class="settings-tab">Notifications</button>
             <button class="settings-tab">Performance</button>
           </div>
 
           <div class="settings-content">
             <section class="settings-section">
-              <h3>Startup</h3>
+              <h3>App Behavior</h3>
+              <div class="settings-row">
+                <div class="settings-copy">
+                  <div class="settings-name">Always on Top</div>
+                  <div class="settings-desc">Keep GameDock pinned above other windows.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" id="set-always-on-top" />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
               <div class="settings-row">
                 <div class="settings-copy">
                   <div class="settings-name">Launch on Startup</div>
                   <div class="settings-desc">Start GameDock when Windows starts.</div>
                 </div>
                 <label class="switch">
-                  <input type="checkbox" checked />
+                  <input type="checkbox" id="set-auto-start" />
                   <span class="switch-slider"></span>
                 </label>
               </div>
               <div class="settings-row">
                 <div class="settings-copy">
-                  <div class="settings-name">Dark Mode</div>
-                  <div class="settings-desc">Keep deep zinc visuals enabled.</div>
+                  <div class="settings-name">Minimize to Tray</div>
+                  <div class="settings-desc">Hide to tray instead of fully closing.</div>
                 </div>
                 <label class="switch">
-                  <input type="checkbox" checked />
+                  <input type="checkbox" id="set-minimize-tray" />
                   <span class="switch-slider"></span>
                 </label>
               </div>
             </section>
 
             <section class="settings-section">
-              <h3>Library Path</h3>
-              <div class="path-selector">
-                <input type="text" value="C:/Games" readonly />
-                <button class="btn-secondary">Change</button>
+              <h3>System</h3>
+              <div class="settings-row">
+                <div class="settings-copy">
+                  <div class="settings-name">Version</div>
+                  <div class="settings-desc">Current installed build.</div>
+                </div>
+                <span id="set-app-version" class="setting-value">-</span>
+              </div>
+              <div class="settings-actions">
+                <div class="settings-inline-actions">
+                  <button id="btn-export-backup" class="btn-secondary">
+                    <span class="material-symbols-outlined">save</span>
+                    Export
+                  </button>
+                  <button id="btn-import-backup" class="btn-secondary">
+                    <span class="material-symbols-outlined">upload</span>
+                    Import
+                  </button>
+                </div>
+                <button class="btn-primary" id="btn-save-settings">Save Settings</button>
               </div>
             </section>
           </div>
@@ -329,75 +282,6 @@
         <div class="modal-actions">
           <button class="btn-secondary" id="btn-cancel-add">Cancel</button>
           <button class="btn-primary" id="btn-confirm-add">Add Game</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="settings-overlay" style="display:none">
-    <div class="modal">
-      <div class="modal-header">
-        <h2>Settings</h2>
-        <button class="modal-close" id="settings-close-btn" aria-label="Close modal">
-          <span class="material-symbols-outlined">close</span>
-        </button>
-      </div>
-
-      <div class="modal-body">
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="material-symbols-outlined">push_pin</span>
-            <span>Always on Top</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-always-on-top" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="material-symbols-outlined">schedule</span>
-            <span>Start with Windows</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-auto-start" />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="material-symbols-outlined">visibility</span>
-            <span>Minimize to Tray</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="set-minimize-tray" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <div class="setting-row">
-          <div class="setting-label">
-            <span class="material-symbols-outlined">info</span>
-            <span>Version</span>
-          </div>
-          <span id="set-app-version" class="setting-value">-</span>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button id="btn-export-backup" class="btn-secondary">
-          <span class="material-symbols-outlined">save</span>
-          Export
-        </button>
-        <button id="btn-import-backup" class="btn-secondary">
-          <span class="material-symbols-outlined">upload</span>
-          Import
-        </button>
-        <div class="modal-actions">
-          <button class="btn-secondary" id="btn-close-settings">Close</button>
-          <button class="btn-primary" id="btn-save-settings">Save</button>
         </div>
       </div>
     </div>

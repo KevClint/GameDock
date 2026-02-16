@@ -202,26 +202,30 @@ button {
 
 .main-view::-webkit-scrollbar,
 .game-grid::-webkit-scrollbar,
-.modal-body::-webkit-scrollbar {
+.modal-body::-webkit-scrollbar,
+.community-feed-col::-webkit-scrollbar {
   width: 8px;
 }
 
 .main-view::-webkit-scrollbar-track,
 .game-grid::-webkit-scrollbar-track,
-.modal-body::-webkit-scrollbar-track {
+.modal-body::-webkit-scrollbar-track,
+.community-feed-col::-webkit-scrollbar-track {
   background: transparent;
 }
 
 .main-view::-webkit-scrollbar-thumb,
 .game-grid::-webkit-scrollbar-thumb,
-.modal-body::-webkit-scrollbar-thumb {
+.modal-body::-webkit-scrollbar-thumb,
+.community-feed-col::-webkit-scrollbar-thumb {
   background: rgba(161, 161, 170, 0.35);
   border-radius: 999px;
 }
 
 .main-view::-webkit-scrollbar-thumb:hover,
 .game-grid::-webkit-scrollbar-thumb:hover,
-.modal-body::-webkit-scrollbar-thumb:hover {
+.modal-body::-webkit-scrollbar-thumb:hover,
+.community-feed-col::-webkit-scrollbar-thumb:hover {
   background: rgba(161, 161, 170, 0.55);
 }
 
@@ -486,9 +490,7 @@ button {
 .game-name,
 .game-playtime,
 .delete-bar-name,
-.setting-value,
-.empty-state-title,
-.empty-state-text {
+.setting-value {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -528,6 +530,7 @@ button {
   display: flex;
   justify-content: space-between;
   gap: 6px;
+  margin-top: auto;
 }
 
 .game-action-btn {
@@ -540,23 +543,40 @@ button {
 }
 
 .empty-state {
-  min-height: 180px;
-  border: 1px dashed var(--border);
+  grid-column: 1 / -1;
+  min-height: 200px;
+  border: 1px dashed rgba(139, 92, 246, 0.28);
   border-radius: var(--radius-md);
-  background: rgba(24, 24, 27, 0.45);
+  background: linear-gradient(180deg, rgba(24, 24, 27, 0.72), rgba(24, 24, 27, 0.45));
   display: grid;
   place-items: center;
-  gap: 6px;
+  gap: var(--space-1);
   text-align: center;
-  padding: var(--space-2);
+  padding: var(--space-3) var(--space-2);
 }
 
 .empty-state-icon {
   color: var(--text-muted);
+  opacity: 0.88;
+}
+
+.empty-state-title,
+.empty-state-text {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.empty-state-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.15px;
 }
 
 .empty-state-text {
   color: var(--text-muted);
+  max-width: 34ch;
+  line-height: 1.5;
 }
 
 .delete-bar {
@@ -1045,7 +1065,7 @@ button {
 .community-layout {
   height: calc(100vh - var(--titlebar-h) - var(--header-h));
   display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: var(--space-2);
   overflow: hidden;
@@ -1134,127 +1154,6 @@ button {
   cursor: pointer;
 }
 
-.social-dock {
-  position: sticky;
-  top: 0;
-  max-height: calc(100vh - var(--titlebar-h) - var(--header-h) - var(--space-2) * 2);
-  display: grid;
-  align-content: start;
-  gap: var(--space-1);
-  padding: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: rgba(24, 24, 27, 0.62);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  overflow-y: auto;
-}
-
-.profile-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding-bottom: var(--space-1);
-  border-bottom: 1px solid var(--border);
-}
-
-.profile-avatar,
-.friend-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #27272a;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: #d4d4d8;
-  flex-shrink: 0;
-}
-
-.profile-name {
-  font-weight: 700;
-}
-
-.profile-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.status-dot,
-.friend-status {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.social-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.social-group {
-  display: grid;
-  gap: 6px;
-}
-
-.friend-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: rgba(24, 24, 27, 0.72);
-}
-
-.friend-text {
-  min-width: 0;
-}
-
-.friend-name {
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.friend-game {
-  font-size: 11px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.friend-status {
-  margin-left: auto;
-}
-
-.online { background: #22c55e; }
-.away { background: #eab308; }
-.offline { background: #6b7280; }
-
-.community-stats {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: rgba(24, 24, 27, 0.72);
-  padding: 10px;
-}
-
-.stats-value {
-  font-size: 14px;
-  font-weight: 700;
-  margin-top: 4px;
-}
-
 /* Settings */
 .settings-shell {
   display: grid;
@@ -1336,19 +1235,20 @@ button {
   white-space: normal;
 }
 
-.path-selector {
+.settings-actions {
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: var(--space-1);
 }
 
-.path-selector input {
-  height: 36px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: #121216;
-  color: #d4d4d8;
-  padding: 0 10px;
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.settings-actions .btn-primary {
+  justify-self: end;
 }
 
 .switch {
@@ -1431,11 +1331,6 @@ button {
 
   .community-layout {
     height: auto;
-  }
-
-  .social-dock {
-    position: static;
-    max-height: none;
   }
 }
 

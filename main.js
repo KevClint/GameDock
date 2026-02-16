@@ -22,13 +22,15 @@ if (!gotLock) app.quit();
 let mainWindow;
 let appData = sanitizeData(store.load());
 const runningSessions = new Map();
+const WINDOW_WIDTH = 650;
+const WINDOW_HEIGHT = 760;
 
 function getWindowPosition() {
   const { screen } = require('electron');
   const display = screen.getPrimaryDisplay();
   const { width, height } = display.workAreaSize;
-  const winWidth = Math.min(1080, Math.max(860, width - 40));
-  const winHeight = Math.min(760, Math.max(640, height - 40));
+  const winWidth = Math.min(WINDOW_WIDTH, width - 16);
+  const winHeight = Math.min(WINDOW_HEIGHT, height - 16);
   const x = width - winWidth - 8;
   const y = height - winHeight - 8;
   return { x, y, winWidth, winHeight };
@@ -126,8 +128,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: winWidth,
     height: winHeight,
-    minWidth: 860,
-    minHeight: 640,
+    minWidth: WINDOW_WIDTH,
+    minHeight: WINDOW_HEIGHT,
+    maxWidth: WINDOW_WIDTH,
+    maxHeight: WINDOW_HEIGHT,
     x,
     y,
     frame: false,
