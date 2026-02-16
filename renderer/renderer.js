@@ -2,12 +2,22 @@ let appData = { games: [], settings: { autoStart: false, minimizeToTray: true } 
 let activeCategory = 'all';
 let searchQuery = '';
 let selectedGameIds = new Set();
+let activeView = 'library';
+
+let discoveryLoaded = false;
+let discoveryLoading = false;
+const DISCOVERY_CACHE_KEY = 'gamedock.discovery.cache.v1';
+const DISCOVERY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const discoveryEntryTimers = new Set();
 
 async function init() {
   appData = (await window.api.getData()) || appData;
   setupTitleBar();
   setupSearch();
   setupCategories();
+  setupNavigation();
+  setupDiscovery();
+  setActiveView('library');
   setupAddGame();
   setupSettings();
   renderGames();
@@ -17,6 +27,376 @@ async function init() {
       deselectGame();
     }
   });
+}
+
+function setupDiscovery() {
+  const retryBtn = document.getElementById('btn-discovery-retry');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      void loadDiscovery(true);
+    });
+  }
+}
+
+function setupNavigation() {
+  document.querySelectorAll('.nav-item[data-nav]').forEach((item) => {
+    item.addEventListener('click', () => {
+      const previousView = activeView;
+      const nav = item.dataset.nav;
+      const targetView = nav === 'settings-nav' ? 'settings' : nav;
+      setActiveView(targetView);
+      if (previousView === 'discover' && targetView !== 'discover') {
+        teardownDiscoveryView();
+      }
+    });
+  });
+}
+
+function setActiveView(viewName) {
+  activeView = viewName;
+  const viewMap = {
+    library: 'view-library',
+    discover: 'view-discovery',
+    community: 'view-community',
+    settings: 'view-settings',
+  };
+
+  const titleMap = {
+    library: 'GameDock',
+    discover: 'Discovery',
+    community: 'Community',
+    settings: 'Settings',
+  };
+
+  document.querySelectorAll('.view-panel').forEach((panel) => {
+    panel.classList.remove('is-active');
+    panel.hidden = true;
+  });
+
+  const targetPanel = document.getElementById(viewMap[viewName] || 'view-library');
+  if (targetPanel) {
+    targetPanel.hidden = false;
+    targetPanel.classList.add('is-active');
+  }
+
+  document.querySelectorAll('.nav-item').forEach((item) => item.classList.remove('active'));
+  document.querySelectorAll(`.nav-item[data-nav="${viewName}"], .nav-item[data-nav="${viewName}-nav"]`)
+    .forEach((item) => item.classList.add('active'));
+
+  const title = document.querySelector('.header-title');
+  if (title) title.textContent = titleMap[viewName] || 'GameDock';
+
+  const mainView = document.querySelector('.main-view');
+  if (mainView) mainView.classList.toggle('compact-view', viewName !== 'library');
+
+  if (viewName !== 'library') hideDeleteBar();
+  if (viewName === 'discover') void loadDiscovery(false);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function normalizeDiscoveryGame(game) {
+  const genres = Array.isArray(game?.genres)
+    ? game.genres.map((g) => g?.name).filter(Boolean)
+    : [];
+
+  return {
+    id: game?.id ?? Date.now(),
+    name: game?.name || 'Unknown Game',
+    background_image: getOptimizedImage(game?.background_image || ''),
+    metacritic: Number.isFinite(game?.metacritic) ? game.metacritic : null,
+    genres,
+  };
+}
+
+function getOptimizedImage(url) {
+  if (!url || typeof url !== 'string') return '';
+  if (!url.includes('/media/')) return url;
+  if (url.includes('/media/resize/')) return url;
+  return url.replace('/media/', '/media/resize/640/-/');
+}
+
+function getDiscoveryDataHash(data) {
+  const payload = {
+    heroId: data?.hero?.id || null,
+    trendingIds: (data?.trending || []).map((g) => g.id),
+    indieIds: (data?.indie || []).map((g) => g.id),
+  };
+  return JSON.stringify(payload);
+}
+
+function readDiscoveryCache() {
+  try {
+    const raw = localStorage.getItem(DISCOVERY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.data || !parsed?.timestamp) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeDiscoveryCache(data) {
+  const record = {
+    timestamp: Date.now(),
+    hash: getDiscoveryDataHash(data),
+    data,
+  };
+  localStorage.setItem(DISCOVERY_CACHE_KEY, JSON.stringify(record));
+}
+
+async function fetchWithCache(url, fetcher) {
+  const now = Date.now();
+  const cached = readDiscoveryCache();
+  const isFresh = cached && now - cached.timestamp < DISCOVERY_CACHE_MAX_AGE_MS;
+
+  if (isFresh) {
+    return { data: cached.data, fromCache: true, stale: false, hash: cached.hash || '' };
+  }
+
+  const fresh = await fetcher(url);
+  return { data: fresh, fromCache: false, stale: false, hash: getDiscoveryDataHash(fresh) };
+}
+
+async function fetchDiscoveryGames() {
+  const sourceUrl = 'rawg://discovery';
+  const cachedRecord = readDiscoveryCache();
+
+  const networkFetcher = async () => {
+    const response = await Promise.race([
+      window.api.getRawgDiscoveryGames?.(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('IPC timeout while loading discovery data')), 15000)),
+    ]);
+    if (!response?.success) {
+      throw new Error(response?.error || 'Failed to load discovery data');
+    }
+
+    const trending = (response.data?.trending || []).map(normalizeDiscoveryGame).slice(0, 10);
+    const indie = (response.data?.indie || []).map(normalizeDiscoveryGame).slice(0, 5);
+    return {
+      hero: trending[0] || null,
+      trending: trending.slice(1),
+      indie,
+    };
+  };
+
+  const cachedResult = await fetchWithCache(sourceUrl, networkFetcher);
+
+  // Cached data is shown immediately, then background refresh runs.
+  if (cachedResult.fromCache) {
+    const refreshPromise = networkFetcher()
+      .then((freshData) => {
+        const freshHash = getDiscoveryDataHash(freshData);
+        const oldHash = cachedRecord?.hash || '';
+        if (freshHash !== oldHash) {
+          writeDiscoveryCache(freshData);
+          if (activeView === 'discover') renderGameCards(freshData);
+        }
+      })
+      .catch((err) => {
+        console.error('Background discovery refresh failed:', err);
+      });
+    // Fire-and-forget refresh to avoid blocking initial paint.
+    void refreshPromise;
+    return cachedResult.data;
+  }
+
+  writeDiscoveryCache(cachedResult.data);
+  return cachedResult.data;
+}
+
+function getMetacriticClass(score) {
+  if (!Number.isFinite(score)) return 'mid';
+  if (score >= 80) return 'high';
+  if (score >= 50) return 'mid';
+  return 'low';
+}
+
+function createDiscoveryCardNode(game) {
+  const card = document.createElement('article');
+  card.className = 'discovery-card card-enter';
+  card.dataset.discoveryId = String(game.id || '');
+
+  const cover = document.createElement('img');
+  cover.className = 'discovery-card-cover';
+  cover.loading = 'lazy';
+  cover.decoding = 'async';
+  cover.alt = game.name || 'Game cover';
+  if (game.background_image) {
+    cover.src = game.background_image;
+  }
+
+  const body = document.createElement('div');
+  body.className = 'discovery-card-body';
+
+  const badge = document.createElement('div');
+  badge.className = `metacritic-badge ${getMetacriticClass(game.metacritic)}`;
+  badge.textContent = `Metacritic ${Number.isFinite(game.metacritic) ? game.metacritic : 'N/A'}`;
+
+  const title = document.createElement('div');
+  title.className = 'discovery-card-title';
+  title.textContent = game.name || 'Unknown Game';
+
+  const genres = document.createElement('div');
+  genres.className = 'discovery-card-genres';
+  genres.textContent = (game.genres || []).slice(0, 3).join(', ') || 'Uncategorized';
+
+  body.append(badge, title, genres);
+  card.append(cover, body);
+  return card;
+}
+
+function staggerRevealCards(container) {
+  const cards = container.querySelectorAll('.card-enter');
+  requestAnimationFrame(() => {
+    cards.forEach((card, index) => {
+      const timer = setTimeout(() => {
+        card.classList.add('is-visible');
+        discoveryEntryTimers.delete(timer);
+      }, index * 18);
+      discoveryEntryTimers.add(timer);
+    });
+  });
+}
+
+function clearDiscoveryEntryTimers() {
+  discoveryEntryTimers.forEach((timer) => clearTimeout(timer));
+  discoveryEntryTimers.clear();
+}
+
+function teardownDiscoveryView() {
+  clearDiscoveryEntryTimers();
+  const heroEl = document.getElementById('discovery-hero');
+  const trendingGrid = document.getElementById('discovery-grid-trending');
+  const indieGrid = document.getElementById('discovery-grid-indie');
+  if (heroEl) heroEl.textContent = '';
+  if (trendingGrid) trendingGrid.textContent = '';
+  if (indieGrid) indieGrid.textContent = '';
+}
+
+function renderGameCards(data) {
+  const heroEl = document.getElementById('discovery-hero');
+  const trendingGrid = document.getElementById('discovery-grid-trending');
+  const indieGrid = document.getElementById('discovery-grid-indie');
+  const trendingMeta = document.getElementById('discovery-meta-trending');
+
+  if (!heroEl || !trendingGrid || !indieGrid) return;
+
+  heroEl.innerHTML = '';
+  trendingGrid.innerHTML = '';
+  indieGrid.innerHTML = '';
+  clearDiscoveryEntryTimers();
+
+  if (data.hero) {
+    const heroGenres = escapeHtml((data.hero.genres || []).slice(0, 3).join(' • ') || 'Trending now');
+    const heroScore = Number.isFinite(data.hero.metacritic) ? data.hero.metacritic : 'N/A';
+    const heroBgStyle = data.hero.background_image
+      ? `style="--hero-bg:url('${escapeHtml(data.hero.background_image)}');"`
+      : '';
+
+    heroEl.innerHTML = `
+      <section class="discovery-hero" ${heroBgStyle}>
+        <div class="hero-overlay">
+          <div class="hero-kicker">#1 Trending This Year</div>
+          <h2 class="hero-title">${escapeHtml(data.hero.name)}</h2>
+          <p class="hero-subtitle">${heroGenres}</p>
+          <div class="hero-actions">
+            <button class="btn-primary">
+              <span class="material-symbols-outlined">play_arrow</span>
+              Play Now
+            </button>
+            <button class="btn-secondary">
+              <span class="material-symbols-outlined">bookmark_add</span>
+              Wishlist
+            </button>
+            <span class="metacritic-badge ${getMetacriticClass(data.hero.metacritic)}">Metacritic ${heroScore}</span>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  const trendingFrag = document.createDocumentFragment();
+  data.trending.forEach((game) => {
+    trendingFrag.appendChild(createDiscoveryCardNode(game));
+  });
+  trendingGrid.appendChild(trendingFrag);
+
+  const indieFrag = document.createDocumentFragment();
+  data.indie.forEach((game) => {
+    indieFrag.appendChild(createDiscoveryCardNode(game));
+  });
+  indieGrid.appendChild(indieFrag);
+
+  if (trendingMeta) {
+    trendingMeta.textContent = `Top ${data.trending.length + (data.hero ? 1 : 0)} this year`;
+  }
+
+  staggerRevealCards(trendingGrid);
+  staggerRevealCards(indieGrid);
+}
+
+function setDiscoveryUiState(state) {
+  const loading = document.getElementById('discovery-loading');
+  const offline = document.getElementById('discovery-offline');
+  const content = document.getElementById('discovery-content');
+  if (!loading || !offline || !content) return;
+
+  const loadingActive = state === 'loading';
+  const offlineActive = state === 'offline';
+  const contentActive = state === 'content';
+
+  loading.hidden = !loadingActive;
+  offline.hidden = !offlineActive;
+  content.hidden = !contentActive;
+
+  loading.classList.toggle('is-hidden', !loadingActive);
+  offline.classList.toggle('is-hidden', !offlineActive);
+  content.classList.toggle('is-hidden', !contentActive);
+}
+
+function setDiscoveryOfflineMessage(message) {
+  const offlineMessage = document.getElementById('discovery-offline-message');
+  if (offlineMessage) {
+    offlineMessage.textContent = message || 'Check your RAWG API key or network and try again.';
+  }
+}
+
+async function loadDiscovery(forceRefresh = false) {
+  if (discoveryLoading) return;
+  if (discoveryLoaded && !forceRefresh) return;
+
+  const cached = readDiscoveryCache();
+  if (cached?.data) {
+    renderGameCards(cached.data);
+    setDiscoveryUiState('content');
+  } else {
+    setDiscoveryUiState('loading');
+  }
+
+  discoveryLoading = true;
+
+  try {
+    const data = await fetchDiscoveryGames();
+    renderGameCards(data);
+    setDiscoveryUiState('content');
+    setDiscoveryOfflineMessage('');
+    discoveryLoaded = true;
+  } catch (err) {
+    console.error('Discovery fetch failed:', err);
+    setDiscoveryOfflineMessage(err?.message || 'Check your RAWG API key or network and try again.');
+    setDiscoveryUiState('offline');
+  } finally {
+    discoveryLoading = false;
+  }
 }
 
 function setupTitleBar() {
@@ -143,23 +523,131 @@ function gameSort(a, b) {
   return (b.lastPlayed || 0) - (a.lastPlayed || 0);
 }
 
-function iconElementForGame(game) {
-  const wrap = document.createElement('div');
-  wrap.className = 'game-icon';
+function createGameCard(game) {
+  const card = document.createElement('div');
+  const isSelected = selectedGameIds.has(game.id);
+  card.className = `game-card ${isSelected ? 'selected' : ''}`;
+  card.id = `game-${game.id}`;
+
+  // Cover Image
+  const cover = document.createElement('div');
+  cover.className = 'game-cover';
 
   if (game.icon) {
     const img = document.createElement('img');
     img.src = game.icon;
-    img.alt = '';
+    img.alt = game.name;
     img.onerror = () => {
-      wrap.textContent = 'GAME';
+      cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
     };
-    wrap.appendChild(img);
-    return wrap;
+    cover.appendChild(img);
+  } else {
+    cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
   }
 
-  wrap.textContent = 'GAME';
-  return wrap;
+  // Play Overlay
+  const playOverlay = document.createElement('div');
+  playOverlay.className = 'play-overlay';
+  const playBtn = document.createElement('button');
+  playBtn.className = 'play-button';
+  playBtn.type = 'button';
+  playBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span>';
+  playBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    launchGame(game);
+  });
+  playOverlay.appendChild(playBtn);
+  cover.appendChild(playOverlay);
+
+  // Game Info
+  const info = document.createElement('div');
+  info.className = 'game-info';
+
+  const name = document.createElement('div');
+  name.className = 'game-name';
+  name.textContent = game.name;
+
+  const meta = document.createElement('div');
+  meta.className = 'game-meta';
+
+  const badge = document.createElement('span');
+  badge.className = 'game-badge';
+  badge.innerHTML = `<span class="material-symbols-outlined">label</span>${game.category}`;
+
+  const playtime = document.createElement('span');
+  playtime.className = 'game-playtime';
+  playtime.textContent = game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played';
+
+  meta.append(badge, playtime);
+  info.append(name, meta);
+
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'game-actions';
+
+  const favBtn = document.createElement('button');
+  favBtn.type = 'button';
+  favBtn.className = `game-action-btn ${game.favorite ? 'is-active' : ''}`;
+  favBtn.title = game.favorite ? 'Unfavorite' : 'Favorite';
+  favBtn.setAttribute('aria-label', favBtn.title);
+  favBtn.innerHTML = game.favorite 
+    ? '<span class="material-symbols-outlined">star</span>'
+    : '<span class="material-symbols-outlined">star_outline</span>';
+  favBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const result = await window.api.toggleFavorite(game.id);
+    if (!result.success) {
+      showToast(result.error || 'Failed to update favorite', 'error');
+      return;
+    }
+    appData = await window.api.getData();
+    renderGames();
+  });
+  actions.appendChild(favBtn);
+
+  const selectBtn = document.createElement('button');
+  selectBtn.type = 'button';
+  selectBtn.className = `game-action-btn ${isSelected ? 'is-active' : ''}`;
+  selectBtn.title = isSelected ? 'Unselect' : 'Select';
+  selectBtn.setAttribute('aria-label', selectBtn.title);
+  selectBtn.innerHTML = isSelected
+    ? '<span class="material-symbols-outlined">check_circle</span>'
+    : '<span class="material-symbols-outlined">radio_button_unchecked</span>';
+  selectBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleGameSelection(game.id);
+  });
+  actions.appendChild(selectBtn);
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'game-action-btn';
+  delBtn.title = 'Delete';
+  delBtn.setAttribute('aria-label', 'Delete');
+  delBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
+  delBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Remove "${game.name}" from GameDock?`)) return;
+    await deleteGame(game.id);
+    deselectGame(game.id);
+  });
+  actions.appendChild(delBtn);
+
+  card.append(cover, info, actions);
+
+  card.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (selectedGameIds.size > 0) toggleGameSelection(game.id);
+    else launchGame(game);
+  });
+
+  card.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleGameSelection(game.id);
+  });
+
+  return card;
 }
 
 function renderGames() {
@@ -174,103 +662,22 @@ function renderGames() {
   if (games.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    const line1 = document.createElement('span');
-    line1.textContent = 'No Games';
-    const line2 = document.createElement('p');
-    line2.textContent = searchQuery ? 'No games match your search' : 'No games yet. Add one below.';
-    empty.append(line1, line2);
+    const icon = document.createElement('span');
+    icon.className = 'empty-state-icon material-symbols-outlined';
+    icon.textContent = 'sports_esports';
+    const title = document.createElement('div');
+    title.className = 'empty-state-title';
+    title.textContent = 'No Games';
+    const text = document.createElement('p');
+    text.className = 'empty-state-text';
+    text.textContent = searchQuery ? 'No games match your search' : 'No games yet. Add one below.';
+    empty.append(icon, title, text);
     list.appendChild(empty);
     return;
   }
 
   games.forEach((game) => {
-    const card = document.createElement('div');
-    const isSelected = selectedGameIds.has(game.id);
-    card.className = `game-card ${isSelected ? 'selected' : ''}`;
-    card.id = `game-${game.id}`;
-
-    const icon = iconElementForGame(game);
-
-    const info = document.createElement('div');
-    info.className = 'game-info';
-    const name = document.createElement('div');
-    name.className = 'game-name';
-    name.textContent = game.name;
-    const meta = document.createElement('div');
-    meta.className = 'game-meta';
-    const cat = document.createElement('span');
-    cat.className = 'game-cat';
-    cat.textContent = game.category;
-    const lastPlayed = document.createElement('span');
-    lastPlayed.className = 'game-playtime';
-    lastPlayed.textContent = game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played';
-    meta.append(cat, lastPlayed);
-    info.append(name, meta);
-
-    const actions = document.createElement('div');
-    actions.className = 'game-actions';
-    const fav = document.createElement('button');
-    fav.type = 'button';
-    fav.className = `btn-fav ${game.favorite ? 'is-active' : ''}`;
-    fav.title = game.favorite ? 'Unfavorite' : 'Favorite';
-    fav.setAttribute('aria-label', fav.title);
-    fav.textContent = game.favorite ? '★' : '☆';
-    fav.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const result = await window.api.toggleFavorite(game.id);
-      if (!result.success) {
-        showToast(result.error || 'Failed to update favorite', 'error');
-        return;
-      }
-      appData = await window.api.getData();
-      renderGames();
-    });
-    actions.appendChild(fav);
-
-    const selectBtn = document.createElement('button');
-    selectBtn.type = 'button';
-    selectBtn.className = `btn-select ${isSelected ? 'is-active' : ''}`;
-    selectBtn.title = isSelected ? 'Unselect' : 'Select';
-    selectBtn.setAttribute('aria-label', selectBtn.title);
-    selectBtn.textContent = isSelected ? '✓' : '☐';
-    selectBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      toggleGameSelection(game.id);
-    });
-    actions.appendChild(selectBtn);
-
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'btn-del';
-    del.title = 'Delete';
-    del.setAttribute('aria-label', del.title);
-    del.textContent = '✕';
-    del.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm(`Remove "${game.name}" from GameDock?`)) return;
-      await deleteGame(game.id);
-      deselectGame(game.id);
-    });
-    actions.appendChild(del);
-
-    const overlay = document.createElement('div');
-    overlay.className = 'launch-overlay';
-    overlay.textContent = 'Launching...';
-
-    card.append(icon, info, actions, overlay);
-
-    card.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (selectedGameIds.size > 0) toggleGameSelection(game.id);
-      else launchGame(game);
-    });
-
-    card.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleGameSelection(game.id);
-    });
-
+    const card = createGameCard(game);
     list.appendChild(card);
   });
 }
@@ -429,6 +836,10 @@ function setupAddGame() {
     document.getElementById('modal-overlay').style.display = 'none';
   };
 
+  document.getElementById('modal-close-btn').onclick = () => {
+    document.getElementById('modal-overlay').style.display = 'none';
+  };
+
   document.getElementById('modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-overlay') {
       document.getElementById('modal-overlay').style.display = 'none';
@@ -472,6 +883,10 @@ function setupSettings() {
   };
 
   document.getElementById('btn-close-settings').onclick = () => {
+    document.getElementById('settings-overlay').style.display = 'none';
+  };
+
+  document.getElementById('settings-close-btn').onclick = () => {
     document.getElementById('settings-overlay').style.display = 'none';
   };
 

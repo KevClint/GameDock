@@ -7,6 +7,8 @@ const api = Object.freeze({
   exportData:    ()       => ipcRenderer.invoke('export-data'),
   importData:    ()       => ipcRenderer.invoke('import-data'),
   getAppInfo:    ()       => ipcRenderer.invoke('get-app-info'),
+  getRawgKey:    ()       => ipcRenderer.invoke('get-rawg-key'),
+  getRawgDiscoveryGames: () => ipcRenderer.invoke('rawg-discovery-games'),
   detectSteamGames: ()    => ipcRenderer.invoke('detect-steam-games'),
 
   // Games

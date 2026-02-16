@@ -1,136 +1,416 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
+  <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' https://api.rawg.io; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com;">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>GameDock</title>
-  <link rel="stylesheet" href="styles.css"/>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
-  <!-- Title Bar -->
   <div class="title-bar">
     <div class="title-left">
-      <span class="logo" >🎮</span>
+      <span class="logo-icon material-symbols-outlined">sports_esports</span>
       <span class="logo-text">GameDock</span>
     </div>
     <div class="title-actions">
-      <button id="btn-settings" title="Settings">⚙</button>
-      <button id="btn-hide"     title="Hide to tray">—</button>
-      <button id="btn-close"    title="Quit" class="close">✕</button>
+      <button id="btn-hide" class="title-btn" title="Minimize to tray" aria-label="Minimize">
+        <span class="material-symbols-outlined">minimize</span>
+      </button>
+      <button id="btn-close" class="title-btn title-btn-close" title="Quit" aria-label="Close">
+        <span class="material-symbols-outlined">close</span>
+      </button>
     </div>
   </div>
 
-  <!-- Search -->
-  <div class="search-wrap">
-    <input type="text" id="search-input" placeholder="🔍 Search games..."/>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Primary">
+      <nav class="nav-primary">
+        <button class="nav-item active" data-nav="library" title="Library">
+          <span class="material-symbols-outlined">library_books</span>
+          <span class="nav-label">Library</span>
+        </button>
+        <button class="nav-item" data-nav="discover" title="Discover">
+          <span class="material-symbols-outlined">explore</span>
+          <span class="nav-label">Discover</span>
+        </button>
+        <button class="nav-item" data-nav="community" title="Community">
+          <span class="material-symbols-outlined">group</span>
+          <span class="nav-label">Community</span>
+        </button>
+      </nav>
+
+      <nav class="nav-secondary">
+        <button class="nav-item" data-nav="settings-nav" title="Settings">
+          <span class="material-symbols-outlined">tune</span>
+          <span class="nav-label">Settings</span>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="main-view">
+      <header class="content-header">
+        <div class="header-left">
+          <h1 class="header-title">GameDock</h1>
+          <button id="btn-settings" class="icon-btn" title="Settings" aria-label="Settings">
+            <span class="material-symbols-outlined">settings</span>
+          </button>
+        </div>
+
+        <div class="header-actions">
+          <label class="search-container" for="search-input">
+            <span class="material-symbols-outlined search-icon">search</span>
+            <input
+              type="text"
+              id="search-input"
+              class="search-input"
+              placeholder="Search games..."
+              aria-label="Search games"
+            />
+          </label>
+
+          <button class="btn-add-game" id="btn-add-game" title="Add a new game">
+            <span class="material-symbols-outlined">add</span>
+            <span>Add Game</span>
+          </button>
+        </div>
+      </header>
+
+      <section id="view-library" class="view-panel is-active">
+        <div class="filter-bar">
+          <div class="categories" id="categories">
+            <button class="cat-btn active" data-cat="all">All Games</button>
+            <button class="cat-btn" data-cat="FPS">FPS</button>
+            <button class="cat-btn" data-cat="MOBA">MOBA</button>
+            <button class="cat-btn" data-cat="RPG">RPG</button>
+            <button class="cat-btn" data-cat="RTS">RTS</button>
+            <button class="cat-btn" data-cat="Other">Other</button>
+          </div>
+        </div>
+
+        <div class="game-grid" id="game-list"></div>
+      </section>
+
+      <section id="view-discovery" class="view-panel" hidden>
+        <div class="discovery-shell">
+          <div id="discovery-loading" class="discovery-loading">
+            <div class="hero-skeleton skeleton shimmer"></div>
+            <div class="discovery-grid" id="discovery-skeleton-grid">
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+              <article class="discovery-card skeleton-card skeleton shimmer"></article>
+            </div>
+          </div>
+
+          <div id="discovery-offline" class="discovery-offline is-hidden" hidden>
+            <span class="material-symbols-outlined">cloud_off</span>
+            <h3>Discovery Is Offline</h3>
+            <p class="meta-text" id="discovery-offline-message">Check your RAWG API key or network and try again.</p>
+            <button id="btn-discovery-retry" class="btn-secondary">
+              <span class="material-symbols-outlined">refresh</span>
+              Retry
+            </button>
+          </div>
+
+          <div id="discovery-content" class="is-hidden" hidden>
+            <div id="discovery-hero"></div>
+            <div class="view-block-header">
+              <h3>Trending Games</h3>
+              <span class="meta-text" id="discovery-meta-trending">Top picks this year</span>
+            </div>
+            <div id="discovery-grid-trending" class="discovery-grid"></div>
+            <div class="view-block-header">
+              <h3>Highly Rated Indie</h3>
+              <span class="meta-text">Deal of the day alternatives</span>
+            </div>
+            <div id="discovery-grid-indie" class="discovery-grid"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-community" class="view-panel" hidden>
+        <div class="community-shell">
+          <div class="community-feed">
+            <div class="view-block-header">
+              <h3>Community Feed</h3>
+              <span class="meta-text">Live updates</span>
+            </div>
+
+            <article class="feed-card">
+              <div class="feed-media fm-1"></div>
+              <div class="feed-content">
+                <div class="feed-title">Patch 2.3: Ranked Overhaul is now live</div>
+                <p class="feed-snippet">Competitive matchmaking now uses role confidence and includes map veto in Diamond+ tiers.</p>
+                <div class="feed-meta">Orbital Rift • 18 min ago</div>
+              </div>
+            </article>
+
+            <article class="feed-card">
+              <div class="feed-media fm-2"></div>
+              <div class="feed-content">
+                <div class="feed-title">Community Post: Best loadouts for Neon District</div>
+                <p class="feed-snippet">Top creators shared their high-mobility builds for close-quarter objective fights.</p>
+                <div class="feed-meta">Cyberstrike Hub • 44 min ago</div>
+              </div>
+            </article>
+
+            <article class="feed-card">
+              <div class="feed-media fm-3"></div>
+              <div class="feed-content">
+                <div class="feed-title">Season Event: Frostline starts this weekend</div>
+                <p class="feed-snippet">Earn limited emotes and weapon skins through co-op challenge tracks.</p>
+                <div class="feed-meta">Ember Arena • 1h ago</div>
+              </div>
+            </article>
+          </div>
+
+          <aside class="friends-panel">
+            <div class="view-block-header">
+              <h3>Friends</h3>
+              <span class="meta-text">12 online</span>
+            </div>
+
+            <div class="friend-row">
+              <div class="friend-avatar">CL</div>
+              <div class="friend-text">
+                <div class="friend-name">Clint Lorenzo</div>
+                <div class="friend-game">In Orbital Rift</div>
+              </div>
+              <span class="friend-status online"></span>
+            </div>
+            <div class="friend-row">
+              <div class="friend-avatar">RM</div>
+              <div class="friend-text">
+                <div class="friend-name">Rina Madsen</div>
+                <div class="friend-game">Online</div>
+              </div>
+              <span class="friend-status online"></span>
+            </div>
+            <div class="friend-row">
+              <div class="friend-avatar">JT</div>
+              <div class="friend-text">
+                <div class="friend-name">J. Tanaka</div>
+                <div class="friend-game">Away</div>
+              </div>
+              <span class="friend-status offline"></span>
+            </div>
+            <div class="friend-row">
+              <div class="friend-avatar">NF</div>
+              <div class="friend-text">
+                <div class="friend-name">N. Flores</div>
+                <div class="friend-game">In Kingdom Cipher</div>
+              </div>
+              <span class="friend-status online"></span>
+            </div>
+            <div class="friend-row">
+              <div class="friend-avatar">AB</div>
+              <div class="friend-text">
+                <div class="friend-name">Ava Brooks</div>
+                <div class="friend-game">Offline</div>
+              </div>
+              <span class="friend-status offline"></span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view-panel" hidden>
+        <div class="settings-shell">
+          <div class="settings-nav">
+            <button class="settings-tab active">General</button>
+            <button class="settings-tab">Library</button>
+            <button class="settings-tab">Notifications</button>
+            <button class="settings-tab">Performance</button>
+          </div>
+
+          <div class="settings-content">
+            <section class="settings-section">
+              <h3>Startup</h3>
+              <div class="settings-row">
+                <div class="settings-copy">
+                  <div class="settings-name">Launch on Startup</div>
+                  <div class="settings-desc">Start GameDock when Windows starts.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+              <div class="settings-row">
+                <div class="settings-copy">
+                  <div class="settings-name">Dark Mode</div>
+                  <div class="settings-desc">Keep deep zinc visuals enabled.</div>
+                </div>
+                <label class="switch">
+                  <input type="checkbox" checked />
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+            </section>
+
+            <section class="settings-section">
+              <h3>Library Path</h3>
+              <div class="path-selector">
+                <input type="text" value="C:/Games" readonly />
+                <button class="btn-secondary">Change</button>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
-  <!-- Category Filter -->
-  <div class="categories" id="categories">
-    <button class="cat-btn active" data-cat="all">All</button>
-    <button class="cat-btn" data-cat="FPS">FPS</button>
-    <button class="cat-btn" data-cat="MOBA">MOBA</button>
-    <button class="cat-btn" data-cat="RPG">RPG</button>
-    <button class="cat-btn" data-cat="RTS">RTS</button>
-    <button class="cat-btn" data-cat="Other">Other</button>
+  <div id="delete-bar" class="delete-bar">
+    <span id="delete-bar-name" class="delete-bar-name"></span>
+    <div class="delete-bar-actions">
+      <button id="delete-bar-btn" class="btn-delete-confirm">Remove Selected</button>
+      <button id="delete-bar-cancel" class="btn-delete-cancel">Cancel</button>
+    </div>
   </div>
 
-  <!-- Game List -->
-  <div class="game-list" id="game-list"></div>
-
-  <!-- Add Game Button -->
-  <div class="bottom-bar">
-    <button class="btn-add" id="btn-add-game">+ Add Game</button>
-  </div>
-
-  <!-- Add Game Modal -->
   <div class="modal-overlay" id="modal-overlay" style="display:none">
     <div class="modal">
-      <h3>Add Game</h3>
-      <div class="modal-field">
-        <label>Game Name</label>
-        <input type="text" id="game-name" placeholder="e.g. Valorant"/>
+      <div class="modal-header">
+        <h2>Add Game</h2>
+        <button class="modal-close" id="modal-close-btn" aria-label="Close modal">
+          <span class="material-symbols-outlined">close</span>
+        </button>
       </div>
-      <div class="modal-field">
-        <label>Category</label>
-        <select id="game-category">
-          <option value="FPS">🎯 FPS</option>
-          <option value="MOBA">⚔️ MOBA</option>
-          <option value="RPG">🧙 RPG</option>
-          <option value="RTS">🏰 RTS</option>
-          <option value="Other">🎮 Other</option>
-        </select>
-      </div>
-      <div class="modal-field">
-        <label>Game Executable</label>
-        <div class="path-row">
-          <input type="text" id="game-path" placeholder="Path to .exe..." readonly/>
-          <button id="btn-browse">Browse</button>
-        </div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="btn-toggle-advanced" type="button">Show Advanced</button>
-      </div>
-      <div id="advanced-options" class="advanced-options hidden">
+
+      <div class="modal-body">
         <div class="modal-field">
-          <label>Launch Arguments (Optional)</label>
-          <input type="text" id="game-args" placeholder="e.g. -novid -dx11"/>
+          <label for="game-name">Game Name</label>
+          <input type="text" id="game-name" placeholder="e.g. Valorant" />
         </div>
+
         <div class="modal-field">
-          <label>Working Directory (Optional)</label>
-          <input type="text" id="game-working-dir" placeholder="Defaults to exe folder"/>
+          <label for="game-category">Category</label>
+          <select id="game-category">
+            <option value="FPS">FPS</option>
+            <option value="MOBA">MOBA</option>
+            <option value="RPG">RPG</option>
+            <option value="RTS">RTS</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="modal-field">
+          <label for="game-path">Game Executable</label>
+          <div class="path-input-group">
+            <input type="text" id="game-path" placeholder="Path to .exe..." readonly />
+            <button id="btn-browse" class="btn-browse">Browse</button>
+          </div>
+        </div>
+
+        <button id="btn-toggle-advanced" class="btn-link">Show Advanced Options</button>
+
+        <div id="advanced-options" class="advanced-options hidden">
+          <div class="modal-field">
+            <label for="game-args">Launch Arguments (Optional)</label>
+            <input type="text" id="game-args" placeholder="e.g. -novid -dx11" />
+          </div>
+          <div class="modal-field">
+            <label for="game-working-dir">Working Directory (Optional)</label>
+            <input type="text" id="game-working-dir" placeholder="Defaults to exe folder" />
+          </div>
         </div>
       </div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="btn-detect-steam">Detect Steam</button>
-        <button class="btn-confirm" id="btn-confirm-add">Add Game</button>
-        <button class="btn-cancel"  id="btn-cancel-add">Cancel</button>
+
+      <div class="modal-footer">
+        <button id="btn-detect-steam" class="btn-secondary">
+          <span class="material-symbols-outlined">cloud_download</span>
+          Detect Steam
+        </button>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="btn-cancel-add">Cancel</button>
+          <button class="btn-primary" id="btn-confirm-add">Add Game</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Settings Modal -->
   <div class="modal-overlay" id="settings-overlay" style="display:none">
     <div class="modal">
-      <h3>⚙ Settings</h3>
-      <div class="setting-row">
-        <label>Always on Top</label>
-        <label class="toggle">
-          <input type="checkbox" id="set-always-on-top"/>
-          <span class="slider"></span>
-        </label>
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="modal-close" id="settings-close-btn" aria-label="Close modal">
+          <span class="material-symbols-outlined">close</span>
+        </button>
       </div>
-      <div class="setting-row">
-        <label>Start with Windows</label>
-        <label class="toggle">
-          <input type="checkbox" id="set-auto-start"/>
-          <span class="slider"></span>
-        </label>
+
+      <div class="modal-body">
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="material-symbols-outlined">push_pin</span>
+            <span>Always on Top</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-always-on-top" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="material-symbols-outlined">schedule</span>
+            <span>Start with Windows</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-auto-start" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="material-symbols-outlined">visibility</span>
+            <span>Minimize to Tray</span>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="set-minimize-tray" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">
+            <span class="material-symbols-outlined">info</span>
+            <span>Version</span>
+          </div>
+          <span id="set-app-version" class="setting-value">-</span>
+        </div>
       </div>
-      <div class="setting-row">
-        <label>Minimize to Tray</label>
-        <label class="toggle">
-          <input type="checkbox" id="set-minimize-tray" checked/>
-          <span class="slider"></span>
-        </label>
-      </div>
-      <div class="setting-row">
-        <label>Version</label>
-        <label id="set-app-version">-</label>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="btn-export-backup">Export Backup</button>
-        <button class="btn-cancel" id="btn-import-backup">Import Backup</button>
-      </div>
-      <div class="modal-actions">
-        <button class="btn-confirm" id="btn-save-settings">Save</button>
-        <button class="btn-cancel"  id="btn-close-settings">Close</button>
+
+      <div class="modal-footer">
+        <button id="btn-export-backup" class="btn-secondary">
+          <span class="material-symbols-outlined">save</span>
+          Export
+        </button>
+        <button id="btn-import-backup" class="btn-secondary">
+          <span class="material-symbols-outlined">upload</span>
+          Import
+        </button>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="btn-close-settings">Close</button>
+          <button class="btn-primary" id="btn-save-settings">Save</button>
+        </div>
       </div>
     </div>
   </div>
+
+  <div class="toast" style="display:none"></div>
 
   <script src="renderer.js"></script>
 </body>
 </html>
+
+

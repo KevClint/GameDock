@@ -27,8 +27,8 @@ function getWindowPosition() {
   const { screen } = require('electron');
   const display = screen.getPrimaryDisplay();
   const { width, height } = display.workAreaSize;
-  const winWidth = 280;
-  const winHeight = Math.min(600, height - 80);
+  const winWidth = Math.min(1080, Math.max(860, width - 40));
+  const winHeight = Math.min(760, Math.max(640, height - 40));
   const x = width - winWidth - 8;
   const y = height - winHeight - 8;
   return { x, y, winWidth, winHeight };
@@ -126,10 +126,12 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: winWidth,
     height: winHeight,
+    minWidth: 860,
+    minHeight: 640,
     x,
     y,
     frame: false,
-    resizable: false,
+    resizable: true,
     alwaysOnTop: false,
     skipTaskbar: false,
     transparent: false,
@@ -282,6 +284,23 @@ function detectSteamGames() {
   return found;
 }
 
+function readRawgApiKey() {
+  if (process.env.RAWG_API_KEY) {
+    return String(process.env.RAWG_API_KEY).trim();
+  }
+
+  try {
+    const envPath = path.join(app.getAppPath(), '.env');
+    if (!fs.existsSync(envPath)) return '';
+    const envRaw = fs.readFileSync(envPath, 'utf8');
+    const match = envRaw.match(/^\s*RAWG_API_KEY\s*=\s*(.+)\s*$/m);
+    if (!match) return '';
+    return match[1].trim().replace(/^['"]|['"]$/g, '');
+  } catch {
+    return '';
+  }
+}
+
 app.whenReady().then(() => {
   if (appData.settings?.autoStart) {
     app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
@@ -345,6 +364,68 @@ ipcMain.handle('get-app-info', () => ({
   name: app.getName(),
   version: app.getVersion(),
 }));
+
+ipcMain.handle('get-rawg-key', () => readRawgApiKey());
+
+ipcMain.handle('rawg-discovery-games', async () => {
+  const apiKey = readRawgApiKey();
+  if (!apiKey) {
+    return { success: false, error: 'Missing RAWG_API_KEY in .env' };
+  }
+
+  const currentYear = new Date().getFullYear();
+  const trendingParams = new URLSearchParams({
+    key: apiKey,
+    page_size: '10',
+    dates: `${currentYear}-01-01,${currentYear}-12-31`,
+    ordering: '-added',
+  });
+  const indieParams = new URLSearchParams({
+    key: apiKey,
+    page_size: '5',
+    genres: 'indie',
+    ordering: '-metacritic',
+    metacritic: '70,100',
+  });
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const [trendingRes, indieRes] = await Promise.all([
+      fetch(`https://api.rawg.io/api/games?${trendingParams.toString()}`, { signal: controller.signal }),
+      fetch(`https://api.rawg.io/api/games?${indieParams.toString()}`, { signal: controller.signal }),
+    ]);
+    clearTimeout(timeoutId);
+
+    if (!trendingRes.ok || !indieRes.ok) {
+      const trendErr = await trendingRes.text().catch(() => '');
+      const indieErr = await indieRes.text().catch(() => '');
+      return {
+        success: false,
+        error: `RAWG request failed (${trendingRes.status}/${indieRes.status}) ${trendErr || indieErr}`.trim(),
+      };
+    }
+
+    const [trendingJson, indieJson] = await Promise.all([
+      trendingRes.json(),
+      indieRes.json(),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        trending: trendingJson?.results || [],
+        indie: indieJson?.results || [],
+      },
+    };
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      return { success: false, error: 'RAWG request timed out after 12s' };
+    }
+    return { success: false, error: err?.message || 'Network request failed' };
+  }
+});
 
 ipcMain.handle('browse-game', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
