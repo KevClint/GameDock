@@ -87,7 +87,7 @@ function setActiveView(viewName) {
   };
 
   const titleMap = {
-    library: 'GameDock',
+    library: 'Library',
     discover: 'Discovery',
     community: 'Community',
     settings: 'Settings',
