@@ -151,101 +151,77 @@
               <span class="meta-text">Latest gaming headlines</span>
             </div>
             <div id="community-feed-list" class="community-feed-list"></div>
+            <div class="community-feed-actions">
+              <button type="button" id="community-feed-more" class="btn-secondary" hidden>Show More</button>
+            </div>
           </section>
         </div>
       </section>
       <section id="view-settings" class="view-panel" hidden>
-        <div class="settings-shell">
-          <div class="settings-nav">
-            <button class="settings-tab active" data-settings-tab="general">General</button>
-            <button class="settings-tab" data-settings-tab="notifications">Notifications</button>
-            <button class="settings-tab" data-settings-tab="performance">Performance</button>
+        <section class="settings-content settings-section">
+          <h3>App Behavior</h3>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Always on Top</div>
+              <div class="settings-desc">Keep GameDock pinned above other windows.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="set-always-on-top" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
-
-          <div class="settings-content">
-            <section class="settings-section" data-settings-panel="general">
-              <h3>App Behavior</h3>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Always on Top</div>
-                  <div class="settings-desc">Keep GameDock pinned above other windows.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="set-always-on-top" />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Launch on Startup</div>
-                  <div class="settings-desc">Start GameDock when Windows starts.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="set-auto-start" />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Minimize to Tray</div>
-                  <div class="settings-desc">Hide to tray instead of fully closing.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="set-minimize-tray" />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-              <h3>System</h3>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Version</div>
-                  <div class="settings-desc">Current installed build.</div>
-                </div>
-                <span id="set-app-version" class="setting-value">-</span>
-              </div>
-              <div class="settings-actions">
-                <div class="settings-inline-actions">
-                  <button id="btn-export-backup" class="btn-secondary">
-                    <span class="material-symbols-outlined">save</span>
-                    Export
-                  </button>
-                  <button id="btn-import-backup" class="btn-secondary">
-                    <span class="material-symbols-outlined">upload</span>
-                    Import
-                  </button>
-                </div>
-                <button class="btn-primary" id="btn-save-settings">Save Settings</button>
-              </div>
-            </section>
-
-            <section class="settings-section" data-settings-panel="notifications" hidden>
-              <h3>Launch Alerts</h3>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Launch Notifications</div>
-                  <div class="settings-desc">Show a desktop alert when a game starts.</div>
-                </div>
-                <label class="switch">
-                  <input type="checkbox" id="set-launch-notifications" />
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-              <div class="settings-actions">
-                <button class="btn-primary" id="btn-save-notifications">Save Notifications</button>
-              </div>
-            </section>
-
-            <section class="settings-section" data-settings-panel="performance" hidden>
-              <h3>Performance</h3>
-              <div class="settings-row">
-                <div class="settings-copy">
-                  <div class="settings-name">Renderer Optimization</div>
-                  <div class="settings-desc">Performance tuning controls are planned for a future update.</div>
-                </div>
-              </div>
-            </section>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Launch on Startup</div>
+              <div class="settings-desc">Start GameDock when Windows starts.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="set-auto-start" />
+              <span class="switch-slider"></span>
+            </label>
           </div>
-        </div>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Minimize to Tray</div>
+              <div class="settings-desc">Hide to tray instead of fully closing.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="set-minimize-tray" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Launch Notifications</div>
+              <div class="settings-desc">Show a desktop alert when a game starts.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="set-launch-notifications" />
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+          <h3>System</h3>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Version</div>
+              <div class="settings-desc">Current installed build.</div>
+            </div>
+            <span id="set-app-version" class="setting-value">-</span>
+          </div>
+          <div class="settings-actions">
+            <div class="settings-inline-actions">
+              <button id="btn-export-backup" class="btn-secondary">
+                <span class="material-symbols-outlined">save</span>
+                Export
+              </button>
+              <button id="btn-import-backup" class="btn-secondary">
+                <span class="material-symbols-outlined">upload</span>
+                Import
+              </button>
+            </div>
+            <button class="btn-primary" id="btn-save-settings">Save Settings</button>
+          </div>
+        </section>
       </section>
     </main>
   </div>

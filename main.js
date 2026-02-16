@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -269,6 +269,14 @@ function launchGameInternal(game) {
     });
     applyLaunchStats(game, startedAt);
     startSessionMonitor();
+    if (appData.settings?.launchNotifications !== false && Notification.isSupported()) {
+      const notice = new Notification({
+        title: 'GameDock',
+        body: `Launching ${game.name}`,
+        silent: true,
+      });
+      notice.show();
+    }
 
     child.on('exit', () => {
       const session = runningSessions.get(game.id);
@@ -820,38 +828,48 @@ ipcMain.handle('rawg-discovery-games', async () => {
   }
 });
 
-ipcMain.handle('community-news', async () => {
+ipcMain.handle('community-news', async (_, payload) => {
   const apiKey = readNewsApiKey();
   if (!apiKey) {
-    return { ...fail('ERR_NEWS_API_FAIL'), articles: [] };
+    return { ...fail('ERR_NEWS_API_FAIL'), articles: [], hasMore: false };
   }
+
+  const requestedPage = Number(payload?.page);
+  const requestedPageSize = Number(payload?.pageSize);
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const pageSize = Number.isInteger(requestedPageSize) && requestedPageSize > 0 && requestedPageSize <= 50
+    ? requestedPageSize
+    : 12;
 
   const params = new URLSearchParams({
     q: 'gaming OR videogames',
     language: 'en',
     sortBy: 'publishedAt',
-    pageSize: '12',
+    pageSize: String(pageSize),
+    page: String(page),
     apiKey,
   });
 
   try {
     const res = await fetch(`https://newsapi.org/v2/everything?${params.toString()}`);
     if (!res.ok) {
-      return { ...fail('ERR_NEWS_API_FAIL'), articles: [] };
+      return { ...fail('ERR_NEWS_API_FAIL'), articles: [], hasMore: false };
     }
 
-    const payload = await res.json();
-    const articles = (payload?.articles || []).map((item) => ({
+    const responsePayload = await res.json();
+    const articles = (responsePayload?.articles || []).map((item) => ({
       source: item?.source?.name || 'Gaming News',
       title: item?.title || 'Untitled',
       snippet: item?.description || 'No summary available.',
       url: item?.url || '',
       publishedAt: item?.publishedAt || '',
     }));
+    const totalResults = Number(responsePayload?.totalResults) || 0;
+    const hasMore = articles.length === pageSize && (page * pageSize) < totalResults;
 
-    return { success: true, articles };
+    return { success: true, articles, page, pageSize, totalResults, hasMore };
   } catch {
-    return { ...fail('ERR_NEWS_API_FAIL'), articles: [] };
+    return { ...fail('ERR_NEWS_API_FAIL'), articles: [], hasMore: false };
   }
 });
 
@@ -863,6 +881,19 @@ ipcMain.handle('browse-game', async () => {
   });
   if (result.canceled) return null;
   return result.filePaths[0];
+});
+
+ipcMain.handle('open-external-url', async (_, targetUrl) => {
+  const url = String(targetUrl || '').trim();
+  if (!/^https?:\/\//i.test(url)) {
+    return fail('ERR_UNKNOWN');
+  }
+  try {
+    await shell.openExternal(url);
+    return { success: true };
+  } catch (err) {
+    return fail('ERR_UNKNOWN', { details: toMessage(err) });
+  }
 });
 
 ipcMain.handle('detect-steam-games', async () => {
@@ -978,4 +1009,3 @@ ipcMain.handle('toggle-auto-start', (_, enable) => {
   saveAppData();
   return flag;
 });
-

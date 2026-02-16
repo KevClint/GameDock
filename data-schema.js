@@ -6,6 +6,7 @@ const DEFAULT_DATA = {
     autoStart: false,
     minimizeToTray: true,
     alwaysOnTop: false,
+    launchNotifications: true,
     opacity: 95,
     activeSessions: {},
   },
@@ -123,6 +124,7 @@ function sanitizeSettings(rawSettings) {
     autoStart: Boolean(settings.autoStart),
     minimizeToTray: settings.minimizeToTray !== false,
     alwaysOnTop: Boolean(settings.alwaysOnTop),
+    launchNotifications: settings.launchNotifications !== false,
     opacity: clampNumber(settings.opacity, 95, 30, 100),
     activeSessions,
   };

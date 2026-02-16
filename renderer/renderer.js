@@ -16,6 +16,10 @@ const DISCOVERY_CACHE_KEY = 'gamedock.discovery.cache.v1';
 const DISCOVERY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const discoveryEntryTimers = new Set();
 let communityLoaded = false;
+let communityFeedPage = 1;
+let communityFeedHasMore = false;
+let communityFeedLoadingMore = false;
+const COMMUNITY_PAGE_SIZE = 12;
 
 const MOCK_COMMUNITY_ARTICLES = [
   {
@@ -50,6 +54,7 @@ async function init() {
   setupSortMode();
   setupNavigation();
   setupDiscovery();
+  setupCommunityFeed();
   setupGameContextMenu();
   setupSteamImportWizard();
   setActiveView('library');
@@ -154,7 +159,37 @@ function normalizeDiscoveryGame(game) {
     background_image: getOptimizedImage(game?.background_image || ''),
     metacritic: Number.isFinite(game?.metacritic) ? game.metacritic : null,
     genres,
+    slug: typeof game?.slug === 'string' ? game.slug : '',
+    website: typeof game?.website === 'string' ? game.website : '',
+    infoUrl: getDiscoveryGameInfoUrl(game),
   };
+}
+
+function getDiscoveryGameInfoUrl(game) {
+  const slug = String(game?.slug || '').trim();
+  if (slug) {
+    return `https://rawg.io/games/${encodeURIComponent(slug)}`;
+  }
+
+  const website = String(game?.website || '').trim();
+  if (/^https?:\/\//i.test(website)) {
+    return website;
+  }
+  const name = String(game?.name || '').trim();
+  if (name) {
+    return `https://rawg.io/search?query=${encodeURIComponent(name)}`;
+  }
+  return '';
+}
+
+async function openDiscoveryGameInfo(url) {
+  const target = String(url || '').trim();
+  if (!target) return;
+
+  const result = await window.api.openExternalUrl?.(target);
+  if (!result?.success) {
+    showToast(result?.error || 'ERR_UNKNOWN', 'error');
+  }
 }
 
 function getOptimizedImage(url) {
@@ -292,6 +327,24 @@ function createDiscoveryCardNode(game) {
 
   body.append(badge, title, genres);
   card.append(cover, body);
+
+  const infoUrl = game.infoUrl || getDiscoveryGameInfoUrl(game);
+  if (infoUrl) {
+    card.classList.add('is-link');
+    card.setAttribute('role', 'button');
+    card.tabIndex = 0;
+    card.title = 'Open game info';
+    card.addEventListener('click', () => {
+      void openDiscoveryGameInfo(infoUrl);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        void openDiscoveryGameInfo(infoUrl);
+      }
+    });
+  }
+
   return card;
 }
 
@@ -337,49 +390,62 @@ function renderGameCards(data) {
   indieGrid.innerHTML = '';
   clearDiscoveryEntryTimers();
 
-  if (data.hero) {
-    const heroGenres = escapeHtml((data.hero.genres || []).slice(0, 3).join(' • ') || 'Trending now');
-    const heroScore = Number.isFinite(data.hero.metacritic) ? data.hero.metacritic : 'N/A';
-    const heroBgStyle = data.hero.background_image
-      ? `style="--hero-bg:url('${escapeHtml(data.hero.background_image)}');"`
+  const normalizedData = {
+    hero: data?.hero ? normalizeDiscoveryGame(data.hero) : null,
+    trending: Array.isArray(data?.trending) ? data.trending.map(normalizeDiscoveryGame) : [],
+    indie: Array.isArray(data?.indie) ? data.indie.map(normalizeDiscoveryGame) : [],
+  };
+
+  if (normalizedData.hero) {
+    const heroGenres = escapeHtml((normalizedData.hero.genres || []).slice(0, 3).join(' | ') || 'Trending now');
+    const heroScore = Number.isFinite(normalizedData.hero.metacritic) ? normalizedData.hero.metacritic : 'N/A';
+    const heroBgStyle = normalizedData.hero.background_image
+      ? `style="--hero-bg:url('${escapeHtml(normalizedData.hero.background_image)}');"`
       : '';
 
     heroEl.innerHTML = `
       <section class="discovery-hero" ${heroBgStyle}>
         <div class="hero-overlay">
           <div class="hero-kicker">#1 Trending This Year</div>
-          <h2 class="hero-title">${escapeHtml(data.hero.name)}</h2>
+          <h2 class="hero-title">${escapeHtml(normalizedData.hero.name)}</h2>
           <p class="hero-subtitle">${heroGenres}</p>
           <div class="hero-actions">
-            <button class="btn-primary">
-              <span class="material-symbols-outlined">play_arrow</span>
-              Play Now
-            </button>
-            <button class="btn-secondary">
-              <span class="material-symbols-outlined">bookmark_add</span>
-              Wishlist
-            </button>
-            <span class="metacritic-badge ${getMetacriticClass(data.hero.metacritic)}">Metacritic ${heroScore}</span>
+            ${normalizedData.hero.infoUrl ? `
+              <button class="btn-primary js-discovery-open-hero" type="button">
+                <span class="material-symbols-outlined">open_in_new</span>
+                View Game Info
+              </button>
+            ` : ''}
+            <span class="metacritic-badge ${getMetacriticClass(normalizedData.hero.metacritic)}">Metacritic ${heroScore}</span>
           </div>
         </div>
       </section>
     `;
+
+    if (normalizedData.hero.infoUrl) {
+      const heroOpenBtn = heroEl.querySelector('.js-discovery-open-hero');
+      if (heroOpenBtn) {
+        heroOpenBtn.addEventListener('click', () => {
+          void openDiscoveryGameInfo(normalizedData.hero.infoUrl);
+        });
+      }
+    }
   }
 
   const trendingFrag = document.createDocumentFragment();
-  data.trending.forEach((game) => {
+  normalizedData.trending.forEach((game) => {
     trendingFrag.appendChild(createDiscoveryCardNode(game));
   });
   trendingGrid.appendChild(trendingFrag);
 
   const indieFrag = document.createDocumentFragment();
-  data.indie.forEach((game) => {
+  normalizedData.indie.forEach((game) => {
     indieFrag.appendChild(createDiscoveryCardNode(game));
   });
   indieGrid.appendChild(indieFrag);
 
   if (trendingMeta) {
-    trendingMeta.textContent = `Top ${data.trending.length + (data.hero ? 1 : 0)} this year`;
+    trendingMeta.textContent = `Top ${normalizedData.trending.length + (normalizedData.hero ? 1 : 0)} this year`;
   }
 
   staggerRevealCards(trendingGrid);
@@ -433,13 +499,45 @@ function normalizeArticle(article) {
   };
 }
 
-function renderNewsFeed(articles) {
+function createFeedCard(article) {
+  const a = normalizeArticle(article);
+  const card = document.createElement('article');
+  card.className = 'feed-card';
+  card.innerHTML = `
+    <div class="feed-source">${escapeHtml(a.source)} | ${escapeHtml(formatPublishedAgo(a.publishedAt))}</div>
+    <div class="feed-title">${escapeHtml(a.title)}</div>
+    <p class="feed-snippet">${escapeHtml(a.snippet)}</p>
+    <div class="feed-actions">
+      <a class="feed-read" href="${escapeHtml(a.url)}" target="_blank" rel="noreferrer noopener">Read More</a>
+      <button class="feed-share" type="button" title="Share">
+        <span class="material-symbols-outlined">share</span>
+      </button>
+    </div>
+  `;
+
+  const shareBtn = card.querySelector('.feed-share');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(a.url);
+        showToast('Link copied', 'success');
+      } catch {
+        showToast('Could not copy link', 'error');
+      }
+    });
+  }
+
+  return card;
+}
+
+function renderNewsFeed(articles, options = {}) {
+  const { append = false } = options;
   const list = document.getElementById('community-feed-list');
   if (!list) return;
-  list.textContent = '';
+  if (!append) list.textContent = '';
 
   const normalized = (articles || []).map(normalizeArticle);
-  if (normalized.length === 0) {
+  if (!append && normalized.length === 0) {
     const empty = document.createElement('article');
     empty.className = 'feed-card';
     empty.innerHTML = `
@@ -453,54 +551,94 @@ function renderNewsFeed(articles) {
 
   const frag = document.createDocumentFragment();
   normalized.forEach((a) => {
-    const card = document.createElement('article');
-    card.className = 'feed-card';
-    card.innerHTML = `
-      <div class="feed-source">${escapeHtml(a.source)} • ${escapeHtml(formatPublishedAgo(a.publishedAt))}</div>
-      <div class="feed-title">${escapeHtml(a.title)}</div>
-      <p class="feed-snippet">${escapeHtml(a.snippet)}</p>
-      <div class="feed-actions">
-        <a class="feed-read" href="${escapeHtml(a.url)}" target="_blank" rel="noreferrer noopener">Read More</a>
-        <button class="feed-share" type="button" title="Share">
-          <span class="material-symbols-outlined">share</span>
-        </button>
-      </div>
-    `;
+    frag.appendChild(createFeedCard(a));
+  });
+  list.appendChild(frag);
+}
 
-    const shareBtn = card.querySelector('.feed-share');
-    if (shareBtn) {
-      shareBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(a.url);
-          showToast('Link copied', 'success');
-        } catch {
-          showToast('Could not copy link', 'error');
-        }
-      });
+function updateCommunityFeedMoreButton() {
+  const btn = document.getElementById('community-feed-more');
+  if (!btn) return;
+
+  if (communityFeedLoadingMore) {
+    btn.hidden = false;
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+    return;
+  }
+
+  btn.textContent = 'Show More';
+  btn.disabled = false;
+  btn.hidden = !communityFeedHasMore;
+}
+
+function setupCommunityFeed() {
+  const btn = document.getElementById('community-feed-more');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    void loadMoreCommunityNews();
+  });
+  updateCommunityFeedMoreButton();
+}
+
+async function loadMoreCommunityNews() {
+  if (communityFeedLoadingMore || !communityFeedHasMore) return;
+
+  communityFeedLoadingMore = true;
+  updateCommunityFeedMoreButton();
+  const nextPage = communityFeedPage + 1;
+
+  try {
+    const res = await window.api.getCommunityNews?.({
+      page: nextPage,
+      pageSize: COMMUNITY_PAGE_SIZE,
+    });
+
+    if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
+      renderNewsFeed(res.articles, { append: true });
+      communityFeedPage = nextPage;
+      communityFeedHasMore = Boolean(res.hasMore);
+      return;
     }
 
-    frag.appendChild(card);
-  });
-
-  list.appendChild(frag);
+    communityFeedHasMore = false;
+    if (res?.error) showToast(res.error, 'error');
+  } catch (err) {
+    communityFeedHasMore = false;
+    showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
+  } finally {
+    communityFeedLoadingMore = false;
+    updateCommunityFeedMoreButton();
+  }
 }
 
 async function loadCommunityNews(force = false) {
   if (communityLoaded && !force) return;
+  communityFeedPage = 1;
+  communityFeedHasMore = false;
+  communityFeedLoadingMore = false;
+  updateCommunityFeedMoreButton();
 
   try {
-    const res = await window.api.getCommunityNews?.();
+    const res = await window.api.getCommunityNews?.({
+      page: communityFeedPage,
+      pageSize: COMMUNITY_PAGE_SIZE,
+    });
     if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
       renderNewsFeed(res.articles);
+      communityFeedHasMore = Boolean(res.hasMore);
     } else {
       renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
+      communityFeedHasMore = false;
       if (res?.error) showToast(res.error, 'error');
     }
   } catch (err) {
     showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
     renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
+    communityFeedHasMore = false;
   } finally {
     communityLoaded = true;
+    updateCommunityFeedMoreButton();
   }
 }
 
@@ -638,8 +776,10 @@ function hideDeleteBar() {
 function setupSortMode() {
   const select = document.getElementById('sort-mode');
   if (!select) return;
-  if (!['manual', 'lastPlayed', 'playtime', 'name'].includes(sortMode)) {
-    sortMode = 'manual';
+  const validModes = ['lastPlayed', 'playtime', 'name'];
+  if (!validModes.includes(sortMode)) {
+    sortMode = 'lastPlayed';
+    localStorage.setItem('gamedock.sort.mode', sortMode);
   }
   select.value = sortMode;
   select.addEventListener('change', () => {
@@ -1142,6 +1282,7 @@ function openEditModal(gameId) {
   if (detectSteamBtn) {
     detectSteamBtn.hidden = true;
     detectSteamBtn.disabled = true;
+    detectSteamBtn.style.display = 'none';
   }
 
   document.getElementById('game-name').value = game.name || '';
@@ -1150,10 +1291,9 @@ function openEditModal(gameId) {
   document.getElementById('game-args').value = game.launchArgs || '';
   document.getElementById('game-working-dir').value = game.workingDir || '';
 
-  const hasAdvanced = Boolean(game.launchArgs || game.workingDir);
   const advancedOptions = document.getElementById('advanced-options');
-  advancedOptions.classList.toggle('hidden', !hasAdvanced);
-  document.getElementById('btn-toggle-advanced').textContent = hasAdvanced ? 'Hide Advanced' : 'Show Advanced';
+  advancedOptions.classList.add('hidden');
+  document.getElementById('btn-toggle-advanced').textContent = 'Show Advanced';
 
   overlay.style.display = 'flex';
 }
@@ -1180,6 +1320,7 @@ function setupAddGame() {
     if (detectSteamBtn) {
       detectSteamBtn.hidden = false;
       detectSteamBtn.disabled = false;
+      detectSteamBtn.style.removeProperty('display');
     }
   };
 
@@ -1195,6 +1336,7 @@ function setupAddGame() {
     if (detectSteamBtn) {
       detectSteamBtn.hidden = false;
       detectSteamBtn.disabled = false;
+      detectSteamBtn.style.removeProperty('display');
     }
     document.getElementById('game-name').value = '';
     document.getElementById('game-path').value = '';
@@ -1319,11 +1461,13 @@ function setupSettings() {
   const alwaysOnTopEl = document.getElementById('set-always-on-top');
   const autoStartEl = document.getElementById('set-auto-start');
   const minimizeTrayEl = document.getElementById('set-minimize-tray');
+  const launchNotificationsEl = document.getElementById('set-launch-notifications');
   const appVersionEl = document.getElementById('set-app-version');
 
   if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(s.alwaysOnTop);
   if (autoStartEl) autoStartEl.checked = Boolean(s.autoStart);
   if (minimizeTrayEl) minimizeTrayEl.checked = s.minimizeToTray !== false;
+  if (launchNotificationsEl) launchNotificationsEl.checked = s.launchNotifications !== false;
 
   window.api.getAppInfo()
     .then((info) => {
@@ -1337,10 +1481,12 @@ function setupSettings() {
     const alwaysOnTop = document.getElementById('set-always-on-top').checked;
     const autoStart = document.getElementById('set-auto-start').checked;
     const minimizeTray = document.getElementById('set-minimize-tray').checked;
+    const launchNotifications = document.getElementById('set-launch-notifications').checked;
 
     appData.settings.alwaysOnTop = alwaysOnTop;
     appData.settings.autoStart = autoStart;
     appData.settings.minimizeToTray = minimizeTray;
+    appData.settings.launchNotifications = launchNotifications;
 
     await window.api.toggleAlwaysOnTop(alwaysOnTop);
     await window.api.toggleAutoStart(autoStart);
@@ -1361,6 +1507,7 @@ function setupSettings() {
       if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(appData.settings?.alwaysOnTop);
       if (autoStartEl) autoStartEl.checked = Boolean(appData.settings?.autoStart);
       if (minimizeTrayEl) minimizeTrayEl.checked = appData.settings?.minimizeToTray !== false;
+      if (launchNotificationsEl) launchNotificationsEl.checked = appData.settings?.launchNotifications !== false;
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
@@ -1401,3 +1548,5 @@ function timeAgo(timestamp) {
 }
 
 init();
+
+
