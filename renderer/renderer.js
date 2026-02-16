@@ -3,6 +3,12 @@ let activeCategory = 'all';
 let searchQuery = '';
 let selectedGameIds = new Set();
 let activeView = 'library';
+let errorMap = {};
+let sortMode = localStorage.getItem('gamedock.sort.mode') || 'lastPlayed';
+let contextMenuGameId = null;
+let steamDetectCandidates = [];
+
+const CARD_LAUNCH_GUARD_MS = 300;
 
 let discoveryLoaded = false;
 let discoveryLoading = false;
@@ -37,19 +43,28 @@ const MOCK_COMMUNITY_ARTICLES = [
 
 async function init() {
   appData = (await window.api.getData()) || appData;
+  errorMap = (await window.api.getErrorMap?.()) || {};
   setupTitleBar();
   setupSearch();
   setupCategories();
+  setupSortMode();
   setupNavigation();
   setupDiscovery();
+  setupGameContextMenu();
+  setupSteamImportWizard();
   setActiveView('library');
   setupAddGame();
   setupSettings();
   renderGames();
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.game-card') && !e.target.closest('#delete-bar')) {
+    if (
+      !e.target.closest('.game-card')
+      && !e.target.closest('#delete-bar')
+      && !e.target.closest('#game-context-menu')
+    ) {
       deselectGame();
+      hideGameContextMenu();
     }
   });
 }
@@ -202,7 +217,7 @@ async function fetchDiscoveryGames() {
       new Promise((_, reject) => setTimeout(() => reject(new Error('IPC timeout while loading discovery data')), 15000)),
     ]);
     if (!response?.success) {
-      throw new Error(response?.error || 'Failed to load discovery data');
+      throw new Error(resolveErrorText(response?.error || 'ERR_RAWG_API_FAIL', true));
     }
 
     const trending = (response.data?.trending || []).map(normalizeDiscoveryGame).slice(0, 10);
@@ -479,10 +494,10 @@ async function loadCommunityNews(force = false) {
       renderNewsFeed(res.articles);
     } else {
       renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
-      if (res?.error) console.warn('Community news fallback:', res.error);
+      if (res?.error) showToast(res.error, 'error');
     }
   } catch (err) {
-    console.warn('Community feed failed, using mock data:', err);
+    showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
     renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
   } finally {
     communityLoaded = true;
@@ -510,8 +525,8 @@ async function loadDiscovery(forceRefresh = false) {
     setDiscoveryOfflineMessage('');
     discoveryLoaded = true;
   } catch (err) {
-    console.error('Discovery fetch failed:', err);
-    setDiscoveryOfflineMessage(err?.message || 'Check your RAWG API key or network and try again.');
+    const msg = resolveErrorText(err?.message || err || 'ERR_RAWG_API_FAIL', true);
+    setDiscoveryOfflineMessage(msg);
     setDiscoveryUiState('offline');
   } finally {
     discoveryLoading = false;
@@ -620,13 +635,156 @@ function hideDeleteBar() {
   if (bar) bar.classList.remove('visible');
 }
 
-function gameSort(a, b) {
-  const favDiff = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
-  if (favDiff !== 0) return favDiff;
+function setupSortMode() {
+  const select = document.getElementById('sort-mode');
+  if (!select) return;
+  if (!['manual', 'lastPlayed', 'playtime', 'name'].includes(sortMode)) {
+    sortMode = 'manual';
+  }
+  select.value = sortMode;
+  select.addEventListener('change', () => {
+    sortMode = select.value;
+    localStorage.setItem('gamedock.sort.mode', sortMode);
+    renderGames();
+  });
+}
 
-  if (a.favorite && b.favorite) {
-    const pinDiff = (a.pinOrder || 0) - (b.pinOrder || 0);
-    if (pinDiff !== 0) return pinDiff;
+function getPlaytimeMinutes(game) {
+  return Number(game.totalPlayTime || game.playtimeMinutes || 0);
+}
+
+function formatPlaytime(minutes) {
+  const safe = Math.max(0, Number(minutes) || 0);
+  if (safe < 60) return `${safe}m played`;
+  return `${(safe / 60).toFixed(1)}h played`;
+}
+
+function toFileUrl(filePath) {
+  if (!filePath || typeof filePath !== 'string') return '';
+  const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+  return encodeURI(`file:///${normalized}`);
+}
+
+function resolveErrorText(errorLike, includeTroubleshooting = false) {
+  if (!errorLike) return 'Unknown error';
+
+  if (typeof errorLike === 'string') {
+    const known = errorMap[errorLike];
+    if (!known) return errorLike;
+    if (includeTroubleshooting && known.troubleshooting) {
+      return `${known.message} ${known.troubleshooting}`;
+    }
+    return known.message;
+  }
+
+  if (typeof errorLike === 'object') {
+    const known = errorLike.code ? errorMap[errorLike.code] : null;
+    const baseMessage = known?.message || errorLike.message || errorLike.code || 'Unknown error';
+    const troubleshooting = known?.troubleshooting || errorLike.troubleshooting;
+    if (includeTroubleshooting && troubleshooting) {
+      return `${baseMessage} ${troubleshooting}`;
+    }
+    return baseMessage;
+  }
+
+  return String(errorLike);
+}
+
+function setupGameContextMenu() {
+  const menu = document.getElementById('game-context-menu');
+  if (!menu) return;
+
+  menu.addEventListener('click', async (event) => {
+    const btn = event.target.closest('button[data-action]');
+    if (!btn) return;
+
+    const action = btn.dataset.action;
+    const gameId = Number(contextMenuGameId);
+    const game = appData.games.find((g) => g.id === gameId);
+    hideGameContextMenu();
+    if (!game) return;
+
+    if (action === 'edit') {
+      openEditModal(game.id);
+      return;
+    }
+
+    if (action === 'set-cover-file') {
+      const filePath = await window.api.pickCoverFile?.();
+      if (!filePath) return;
+      const result = await window.api.setCustomCoverFile(game.id, filePath);
+      if (!result?.success) {
+        showToast(result?.error || 'ERR_IMAGE_INVALID', 'error');
+        return;
+      }
+      appData = await window.api.getData();
+      renderGames();
+      showToast('Custom cover updated', 'success');
+      return;
+    }
+
+    if (action === 'set-cover-url') {
+      const url = prompt('Paste image URL:');
+      if (!url) return;
+      const result = await window.api.setCustomCoverUrl(game.id, url.trim());
+      if (!result?.success) {
+        showToast(result?.error || 'ERR_IMAGE_DOWNLOAD_FAIL', 'error');
+        return;
+      }
+      appData = await window.api.getData();
+      renderGames();
+      showToast('Custom cover updated', 'success');
+      return;
+    }
+
+    if (action === 'reset-cover') {
+      const result = await window.api.resetCustomCover(game.id);
+      if (!result?.success) {
+        showToast(result?.error || 'ERR_UNKNOWN', 'error');
+        return;
+      }
+      appData = await window.api.getData();
+      renderGames();
+      showToast('Cover reset', 'success');
+      return;
+    }
+
+    if (action === 'toggle-select') {
+      toggleGameSelection(game.id);
+    }
+  });
+}
+
+function showGameContextMenu(gameId, x, y) {
+  const menu = document.getElementById('game-context-menu');
+  if (!menu) return;
+  contextMenuGameId = gameId;
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+  menu.style.display = 'grid';
+}
+
+function hideGameContextMenu() {
+  const menu = document.getElementById('game-context-menu');
+  if (!menu) return;
+  menu.style.display = 'none';
+  contextMenuGameId = null;
+}
+
+function gameSort(a, b) {
+  if (sortMode === 'manual') {
+    const ao = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : Number.MAX_SAFE_INTEGER;
+    const bo = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : Number.MAX_SAFE_INTEGER;
+    if (ao !== bo) return ao - bo;
+    return (a.addedAt || 0) - (b.addedAt || 0);
+  }
+
+  if (sortMode === 'name') {
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  }
+
+  if (sortMode === 'playtime') {
+    return getPlaytimeMinutes(b) - getPlaytimeMinutes(a);
   }
 
   return (b.lastPlayed || 0) - (a.lastPlayed || 0);
@@ -637,14 +795,15 @@ function createGameCard(game) {
   const isSelected = selectedGameIds.has(game.id);
   card.className = `game-card ${isSelected ? 'selected' : ''}`;
   card.id = `game-${game.id}`;
+  card.dataset.gameId = String(game.id);
 
-  // Cover Image
   const cover = document.createElement('div');
   cover.className = 'game-cover';
 
-  if (game.icon) {
+  const coverSource = game.coverPath ? toFileUrl(game.coverPath) : game.icon;
+  if (coverSource) {
     const img = document.createElement('img');
-    img.src = game.icon;
+    img.src = coverSource;
     img.alt = game.name;
     img.onerror = () => {
       cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
@@ -654,7 +813,6 @@ function createGameCard(game) {
     cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
   }
 
-  // Play Overlay
   const playOverlay = document.createElement('div');
   playOverlay.className = 'play-overlay';
   const playBtn = document.createElement('button');
@@ -668,7 +826,6 @@ function createGameCard(game) {
   playOverlay.appendChild(playBtn);
   cover.appendChild(playOverlay);
 
-  // Game Info
   const info = document.createElement('div');
   info.className = 'game-info';
 
@@ -685,14 +842,28 @@ function createGameCard(game) {
 
   const playtime = document.createElement('span');
   playtime.className = 'game-playtime';
-  playtime.textContent = game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played';
+  const total = getPlaytimeMinutes(game);
+  playtime.textContent = total > 0
+    ? formatPlaytime(total)
+    : (game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played');
 
   meta.append(badge, playtime);
   info.append(name, meta);
 
-  // Actions
   const actions = document.createElement('div');
   actions.className = 'game-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'game-action-btn';
+  editBtn.title = 'Edit';
+  editBtn.setAttribute('aria-label', 'Edit');
+  editBtn.innerHTML = '<span class="material-symbols-outlined">edit</span>';
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openEditModal(game.id);
+  });
+  actions.appendChild(editBtn);
 
   const favBtn = document.createElement('button');
   favBtn.type = 'button';
@@ -706,7 +877,7 @@ function createGameCard(game) {
     e.stopPropagation();
     const result = await window.api.toggleFavorite(game.id);
     if (!result.success) {
-      showToast(result.error || 'Failed to update favorite', 'error');
+      showToast(result.error || 'ERR_UNKNOWN', 'error');
       return;
     }
     appData = await window.api.getData();
@@ -746,6 +917,7 @@ function createGameCard(game) {
 
   card.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (e.target.closest('.drag-handle')) return;
     if (selectedGameIds.size > 0) toggleGameSelection(game.id);
     else launchGame(game);
   });
@@ -753,7 +925,7 @@ function createGameCard(game) {
   card.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     e.stopPropagation();
-    toggleGameSelection(game.id);
+    showGameContextMenu(game.id, e.clientX, e.clientY);
   });
 
   return card;
@@ -799,7 +971,7 @@ async function launchGame(game) {
     appData = await window.api.getData();
     renderGames();
   } else {
-    showToast(result.error || 'Launch failed', 'error');
+    showToast(result.error || 'ERR_UNKNOWN', 'error');
   }
 }
 
@@ -816,6 +988,14 @@ async function deleteGames(ids) {
   const removedCount = before - appData.games.length;
   if (removedCount <= 0) return;
 
+  if (sortMode === 'manual') {
+    appData.games
+      .sort((a, b) => gameSort(a, b))
+      .forEach((game, idx) => {
+        game.sortOrder = idx;
+      });
+  }
+
   uniqueIds.forEach((id) => selectedGameIds.delete(id));
   await save();
   renderGames();
@@ -826,32 +1006,181 @@ async function addDetectedSteamGames() {
   showToast('Scanning Steam libraries...', 'success');
   const result = await window.api.detectSteamGames();
   if (!result.success) {
-    showToast(result.error || 'Steam detection failed', 'error');
+    showToast(result.error || 'ERR_STEAM_DETECT_FAIL', 'error');
     return;
   }
 
-  if (!result.games || result.games.length === 0) {
+  steamDetectCandidates = (result.games || []).map((game) => ({
+    ...game,
+    selected: true,
+  }));
+
+  if (steamDetectCandidates.length === 0) {
     showToast('No new Steam games found', 'error');
     return;
   }
 
-  const detected = result.games.map((g) => ({
-    ...g,
-    icon: null,
-  }));
+  openSteamImportWizard();
+  renderSteamImportList();
+}
 
-  appData.games.push(...detected);
-  await save();
-  renderGames();
-  showToast(`Added ${detected.length} Steam games`, 'success');
+function setupSteamImportWizard() {
+  const close = () => closeSteamImportWizard();
+  const overlay = document.getElementById('steam-import-overlay');
+  if (!overlay) return;
+
+  document.getElementById('steam-import-close')?.addEventListener('click', close);
+  document.getElementById('steam-import-cancel')?.addEventListener('click', close);
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) close();
+  });
+
+  document.getElementById('steam-select-all')?.addEventListener('click', () => {
+    steamDetectCandidates.forEach((g) => { g.selected = true; });
+    renderSteamImportList();
+  });
+
+  document.getElementById('steam-select-none')?.addEventListener('click', () => {
+    steamDetectCandidates.forEach((g) => { g.selected = false; });
+    renderSteamImportList();
+  });
+
+  document.getElementById('steam-import-confirm')?.addEventListener('click', async () => {
+    const selected = steamDetectCandidates.filter((g) => g.selected);
+    if (selected.length === 0) {
+      showToast('Select at least one game to import', 'error');
+      return;
+    }
+
+    const res = await window.api.importSteamGames({ games: selected });
+    if (!res?.success) {
+      showToast(res?.error || 'ERR_STEAM_DETECT_FAIL', 'error');
+      return;
+    }
+
+    appData = await window.api.getData();
+    renderGames();
+    closeSteamImportWizard();
+    showToast(`Imported ${res.added || 0} game(s), skipped ${res.skipped || 0}`, 'success');
+  });
+}
+
+function openSteamImportWizard() {
+  const overlay = document.getElementById('steam-import-overlay');
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function closeSteamImportWizard() {
+  const overlay = document.getElementById('steam-import-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function renderSteamImportList() {
+  const list = document.getElementById('steam-import-list');
+  const summary = document.getElementById('steam-import-summary');
+  if (!list) return;
+
+  list.textContent = '';
+  const frag = document.createDocumentFragment();
+
+  steamDetectCandidates.forEach((game, index) => {
+    const row = document.createElement('label');
+    row.className = 'steam-import-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = Boolean(game.selected);
+    checkbox.addEventListener('change', () => {
+      steamDetectCandidates[index].selected = checkbox.checked;
+      renderSteamImportList();
+    });
+
+    const thumb = document.createElement('img');
+    thumb.src = game.coverUrl || '';
+    thumb.alt = game.name || 'Cover';
+    thumb.onerror = () => {
+      thumb.src = '';
+    };
+
+    const info = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'steam-import-title';
+    title.textContent = game.name || 'Unknown game';
+
+    const meta = document.createElement('div');
+    meta.className = 'steam-import-meta';
+    meta.textContent = `${game.path || ''}${game.steamAppId ? ` | AppID ${game.steamAppId}` : ''}`;
+
+    info.append(title, meta);
+    row.append(checkbox, thumb, info);
+    frag.appendChild(row);
+  });
+
+  list.appendChild(frag);
+  if (summary) {
+    const selectedCount = steamDetectCandidates.filter((g) => g.selected).length;
+    summary.textContent = `${selectedCount} of ${steamDetectCandidates.length} selected`;
+  }
+}
+
+function openEditModal(gameId) {
+  const game = appData.games.find((g) => g.id === Number(gameId));
+  if (!game) {
+    showToast('ERR_GAME_NOT_FOUND', 'error');
+    return;
+  }
+
+  const modal = document.querySelector('.modal');
+  const overlay = document.getElementById('modal-overlay');
+  const title = document.getElementById('modal-title');
+  const confirmBtn = document.getElementById('btn-confirm-add');
+  const detectSteamBtn = document.getElementById('btn-detect-steam');
+
+  modal.dataset.editingId = String(game.id);
+  title.textContent = 'Edit Game';
+  confirmBtn.textContent = 'Save Changes';
+  if (detectSteamBtn) {
+    detectSteamBtn.hidden = true;
+    detectSteamBtn.disabled = true;
+  }
+
+  document.getElementById('game-name').value = game.name || '';
+  document.getElementById('game-path').value = game.path || '';
+  document.getElementById('game-category').value = game.category || 'Other';
+  document.getElementById('game-args').value = game.launchArgs || '';
+  document.getElementById('game-working-dir').value = game.workingDir || '';
+
+  const hasAdvanced = Boolean(game.launchArgs || game.workingDir);
+  const advancedOptions = document.getElementById('advanced-options');
+  advancedOptions.classList.toggle('hidden', !hasAdvanced);
+  document.getElementById('btn-toggle-advanced').textContent = hasAdvanced ? 'Hide Advanced' : 'Show Advanced';
+
+  overlay.style.display = 'flex';
 }
 
 function setupAddGame() {
+  const modal = document.querySelector('.modal');
+  const overlay = document.getElementById('modal-overlay');
+  const modalTitle = document.getElementById('modal-title');
+  const confirmBtn = document.getElementById('btn-confirm-add');
+  const detectSteamBtn = document.getElementById('btn-detect-steam');
   const advancedOptions = document.getElementById('advanced-options');
   const toggleAdvancedBtn = document.getElementById('btn-toggle-advanced');
+
   const setAdvancedVisible = (visible) => {
     advancedOptions.classList.toggle('hidden', !visible);
     toggleAdvancedBtn.textContent = visible ? 'Hide Advanced' : 'Show Advanced';
+  };
+
+  const closeModal = () => {
+    overlay.style.display = 'none';
+    modal.dataset.editingId = '';
+    modalTitle.textContent = 'Add Game';
+    confirmBtn.textContent = 'Add Game';
+    if (detectSteamBtn) {
+      detectSteamBtn.hidden = false;
+      detectSteamBtn.disabled = false;
+    }
   };
 
   toggleAdvancedBtn.onclick = () => {
@@ -860,13 +1189,20 @@ function setupAddGame() {
   };
 
   document.getElementById('btn-add-game').onclick = () => {
+    modal.dataset.editingId = '';
+    modalTitle.textContent = 'Add Game';
+    confirmBtn.textContent = 'Add Game';
+    if (detectSteamBtn) {
+      detectSteamBtn.hidden = false;
+      detectSteamBtn.disabled = false;
+    }
     document.getElementById('game-name').value = '';
     document.getElementById('game-path').value = '';
     document.getElementById('game-category').value = 'FPS';
     document.getElementById('game-args').value = '';
     document.getElementById('game-working-dir').value = '';
     setAdvancedVisible(false);
-    document.getElementById('modal-overlay').style.display = 'flex';
+    overlay.style.display = 'flex';
   };
 
   document.getElementById('btn-browse').onclick = async () => {
@@ -895,7 +1231,9 @@ function setupAddGame() {
     await addDetectedSteamGames();
   };
 
-  document.getElementById('btn-confirm-add').onclick = async () => {
+  confirmBtn.onclick = async () => {
+    const editId = Number(modal.dataset.editingId || 0);
+    const isEditing = Number.isFinite(editId) && editId > 0;
     const name = document.getElementById('game-name').value.trim();
     const gamePath = document.getElementById('game-path').value.trim();
     const category = document.getElementById('game-category').value;
@@ -911,15 +1249,37 @@ function setupAddGame() {
       return;
     }
     if (gamePath.startsWith('\\\\')) {
-      showToast('Network paths are blocked', 'error');
+      showToast('ERR_BLOCKED_PATH', 'error');
+      return;
+    }
+
+    if (isEditing) {
+      const result = await window.api.updateGame({
+        id: editId,
+        name,
+        path: gamePath,
+        category,
+        launchArgs,
+        workingDir,
+      });
+      if (!result?.success) {
+        showToast(result?.error || 'ERR_UNKNOWN', 'error');
+        return;
+      }
+      appData = await window.api.getData();
+      renderGames();
+      closeModal();
+      showToast(`${name} updated`, 'success');
       return;
     }
 
     showToast('Fetching icon...', 'success');
     const icon = await window.api.getGameIcon(gamePath);
+    const maxId = appData.games.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0);
+    const maxSort = appData.games.reduce((max, g) => Math.max(max, Number(g.sortOrder) || 0), -1);
 
     const game = {
-      id: Date.now(),
+      id: maxId + 1,
       name,
       path: gamePath,
       category,
@@ -927,32 +1287,30 @@ function setupAddGame() {
       addedAt: Date.now(),
       lastPlayed: null,
       playtimeMinutes: 0,
+      totalPlayTime: 0,
+      sessionHistory: [],
       launchCount: 0,
       favorite: false,
       pinOrder: 0,
+      sortOrder: maxSort + 1,
       launchArgs,
       workingDir,
+      coverPath: null,
+      logoPath: null,
+      steamAppId: null,
     };
 
     appData.games.push(game);
     await save();
     renderGames();
-    document.getElementById('modal-overlay').style.display = 'none';
+    closeModal();
     showToast(`${name} added`, 'success');
   };
 
-  document.getElementById('btn-cancel-add').onclick = () => {
-    document.getElementById('modal-overlay').style.display = 'none';
-  };
-
-  document.getElementById('modal-close-btn').onclick = () => {
-    document.getElementById('modal-overlay').style.display = 'none';
-  };
-
-  document.getElementById('modal-overlay').addEventListener('click', (e) => {
-    if (e.target.id === 'modal-overlay') {
-      document.getElementById('modal-overlay').style.display = 'none';
-    }
+  document.getElementById('btn-cancel-add').onclick = closeModal;
+  document.getElementById('modal-close-btn').onclick = closeModal;
+  overlay.addEventListener('click', (e) => {
+    if (e.target.id === 'modal-overlay') closeModal();
   });
 }
 
@@ -993,7 +1351,7 @@ function setupSettings() {
   document.getElementById('btn-export-backup').onclick = async () => {
     const res = await window.api.exportData();
     if (res.success) showToast('Backup exported', 'success');
-    else if (!res.canceled) showToast(res.error || 'Export failed', 'error');
+    else if (!res.canceled) showToast(res.error || 'ERR_EXPORT_FAIL', 'error');
   };
 
   document.getElementById('btn-import-backup').onclick = async () => {
@@ -1006,7 +1364,7 @@ function setupSettings() {
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
-      showToast(res.error || 'Import failed', 'error');
+      showToast(res.error || 'ERR_IMPORT_FAIL', 'error');
     }
   };
 }
@@ -1023,10 +1381,10 @@ function showToast(message, type = 'success') {
     toast.className = 'toast';
     document.body.appendChild(toast);
   }
-  toast.textContent = message;
+  toast.textContent = resolveErrorText(message, type === 'error');
   toast.className = `toast ${type} show`;
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.remove('show'), 2500);
+  toastTimeout = setTimeout(() => toast.classList.remove('show'), 3200);
 }
 
 function timeAgo(timestamp) {

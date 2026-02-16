@@ -7,6 +7,7 @@ const DEFAULT_DATA = {
     minimizeToTray: true,
     alwaysOnTop: false,
     opacity: 95,
+    activeSessions: {},
   },
 };
 
@@ -25,6 +26,13 @@ function clampNumber(value, fallback = 0, min = Number.MIN_SAFE_INTEGER, max = N
 function sanitizeName(value) {
   const str = String(value || '').trim();
   return str.slice(0, 120);
+}
+
+function sanitizeOptionalString(value, max = 400) {
+  if (typeof value !== 'string') return null;
+  const str = value.trim();
+  if (!str) return null;
+  return str.slice(0, max);
 }
 
 function normalizePath(rawPath) {
@@ -49,6 +57,26 @@ function sanitizeGame(rawGame) {
   const launchArgs = String(game.launchArgs || '').trim().slice(0, 300);
   const workingDir = String(game.workingDir || '').trim();
   const favorite = Boolean(game.favorite);
+  const sortOrder = clampNumber(game.sortOrder, Number.MAX_SAFE_INTEGER, 0);
+  const totalPlayTime = clampNumber(game.totalPlayTime ?? game.playtimeMinutes, 0, 0);
+  const steamAppId = Number.isFinite(Number(game.steamAppId)) ? Number(game.steamAppId) : null;
+  const sessionHistoryRaw = Array.isArray(game.sessionHistory) ? game.sessionHistory : [];
+  const sessionHistory = sessionHistoryRaw
+    .map((session) => {
+      const s = asObject(session);
+      const startedAt = clampNumber(s.startedAt, 0, 0);
+      const endedAt = clampNumber(s.endedAt, startedAt, startedAt);
+      const durationMinutes = clampNumber(s.durationMinutes, 0, 0);
+      if (!startedAt || !endedAt || endedAt < startedAt) return null;
+      return {
+        startedAt,
+        endedAt,
+        durationMinutes,
+        pid: Number.isFinite(Number(s.pid)) ? Number(s.pid) : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(-120);
 
   return {
     id: clampNumber(game.id, Date.now()),
@@ -58,22 +86,45 @@ function sanitizeGame(rawGame) {
     icon: typeof game.icon === 'string' && game.icon.startsWith('data:image/') ? game.icon : null,
     addedAt: clampNumber(game.addedAt, Date.now()),
     lastPlayed: game.lastPlayed ? clampNumber(game.lastPlayed, null) : null,
-    playtimeMinutes: clampNumber(game.playtimeMinutes, 0, 0),
+    playtimeMinutes: totalPlayTime,
+    totalPlayTime,
+    sessionHistory,
     launchCount: clampNumber(game.launchCount, 0, 0),
     favorite,
     pinOrder: favorite ? clampNumber(game.pinOrder, 0, 0) : 0,
+    sortOrder,
     launchArgs,
     workingDir: normalizePath(workingDir),
+    coverPath: sanitizeOptionalString(game.coverPath, 500),
+    logoPath: sanitizeOptionalString(game.logoPath, 500),
+    steamAppId,
   };
 }
 
 function sanitizeSettings(rawSettings) {
   const settings = asObject(rawSettings);
+  const activeSessionsRaw = asObject(settings.activeSessions);
+  const activeSessions = {};
+
+  for (const [key, value] of Object.entries(activeSessionsRaw)) {
+    const session = asObject(value);
+    const gameId = Number(key);
+    const startedAt = clampNumber(session.startedAt, 0, 0);
+    const pid = Number.isFinite(Number(session.pid)) ? Number(session.pid) : null;
+    if (!Number.isFinite(gameId) || !startedAt) continue;
+    activeSessions[String(gameId)] = {
+      startedAt,
+      pid,
+      lastSeenAt: clampNumber(session.lastSeenAt, startedAt, startedAt),
+    };
+  }
+
   return {
     autoStart: Boolean(settings.autoStart),
     minimizeToTray: settings.minimizeToTray !== false,
     alwaysOnTop: Boolean(settings.alwaysOnTop),
     opacity: clampNumber(settings.opacity, 95, 30, 100),
+    activeSessions,
   };
 }
 

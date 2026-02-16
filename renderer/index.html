@@ -88,6 +88,14 @@
             <button class="cat-btn" data-cat="RTS">RTS</button>
             <button class="cat-btn" data-cat="Other">Other</button>
           </div>
+          <div class="sort-controls">
+            <label for="sort-mode">Sort</label>
+            <select id="sort-mode">
+              <option value="lastPlayed">Last Played</option>
+              <option value="playtime">Playtime</option>
+              <option value="name">Name</option>
+            </select>
+          </div>
         </div>
 
         <div class="game-grid" id="game-list"></div>
@@ -251,9 +259,9 @@
   </div>
 
   <div class="modal-overlay" id="modal-overlay" style="display:none">
-    <div class="modal">
+    <div class="modal" data-editing-id="">
       <div class="modal-header">
-        <h2>Add Game</h2>
+        <h2 id="modal-title">Add Game</h2>
         <button class="modal-close" id="modal-close-btn" aria-label="Close modal">
           <span class="material-symbols-outlined">close</span>
         </button>
@@ -280,11 +288,11 @@
           <label for="game-path">Game Executable</label>
           <div class="path-input-group">
             <input type="text" id="game-path" placeholder="Path to .exe..." readonly />
-            <button id="btn-browse" class="btn-browse">Browse</button>
+            <button type="button" id="btn-browse" class="btn-browse">Browse</button>
           </div>
         </div>
 
-        <button id="btn-toggle-advanced" class="btn-link">Show Advanced Options</button>
+        <button type="button" id="btn-toggle-advanced" class="btn-link">Show Advanced Options</button>
 
         <div id="advanced-options" class="advanced-options hidden">
           <div class="modal-field">
@@ -299,16 +307,49 @@
       </div>
 
       <div class="modal-footer">
-        <button id="btn-detect-steam" class="btn-secondary">
+        <button type="button" id="btn-detect-steam" class="btn-secondary">
           <span class="material-symbols-outlined">cloud_download</span>
           Detect Steam
         </button>
         <div class="modal-actions">
-          <button class="btn-secondary" id="btn-cancel-add">Cancel</button>
-          <button class="btn-primary" id="btn-confirm-add">Add Game</button>
+          <button type="button" class="btn-secondary" id="btn-cancel-add">Cancel</button>
+          <button type="button" class="btn-primary" id="btn-confirm-add">Add Game</button>
         </div>
       </div>
     </div>
+  </div>
+
+  <div class="modal-overlay" id="steam-import-overlay" style="display:none">
+    <div class="modal steam-import-modal">
+      <div class="modal-header">
+        <h2>Steam Import Wizard</h2>
+        <button class="modal-close" id="steam-import-close" aria-label="Close wizard">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="steam-import-toolbar">
+          <button class="btn-secondary" id="steam-select-all">Select All</button>
+          <button class="btn-secondary" id="steam-select-none">Select None</button>
+        </div>
+        <div id="steam-import-list" class="steam-import-list"></div>
+      </div>
+      <div class="modal-footer">
+        <span id="steam-import-summary" class="meta-text">No games detected yet.</span>
+        <div class="modal-actions">
+          <button class="btn-secondary" id="steam-import-cancel">Cancel</button>
+          <button class="btn-primary" id="steam-import-confirm">Import Selected</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-context-menu" class="context-menu" style="display:none">
+    <button type="button" data-action="edit">Edit Game</button>
+    <button type="button" data-action="set-cover-file">Set Custom Cover (File)</button>
+    <button type="button" data-action="set-cover-url">Set Custom Cover (URL)</button>
+    <button type="button" data-action="reset-cover">Reset Cover</button>
+    <button type="button" data-action="toggle-select">Toggle Selection</button>
   </div>
 
   <div class="toast" style="display:none"></div>

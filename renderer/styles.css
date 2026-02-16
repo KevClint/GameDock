@@ -358,6 +358,11 @@ button {
 .filter-bar {
   padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
 .categories {
@@ -366,6 +371,26 @@ button {
   gap: 6px;
   overflow-x: auto;
   padding-bottom: 2px;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sort-controls label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.sort-controls select {
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 8px;
 }
 
 .categories::-webkit-scrollbar {
@@ -422,6 +447,11 @@ button {
   flex-direction: column;
   gap: var(--space-1);
   cursor: pointer;
+}
+
+.game-card.is-dragging {
+  opacity: 0.65;
+  transform: scale(0.98);
 }
 
 .game-card:hover {
@@ -532,6 +562,14 @@ button {
   justify-content: space-between;
   gap: 6px;
   margin-top: auto;
+}
+
+.drag-handle {
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
 }
 
 .game-action-btn {
@@ -749,6 +787,82 @@ button {
   gap: 6px;
   margin-left: auto;
   flex-wrap: wrap;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(24, 24, 27, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.context-menu button {
+  height: 32px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.context-menu button:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+.steam-import-modal {
+  width: min(760px, 100%);
+}
+
+.steam-import-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.steam-import-list {
+  display: grid;
+  gap: 8px;
+}
+
+.steam-import-item {
+  display: grid;
+  grid-template-columns: auto 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: #121216;
+}
+
+.steam-import-item img {
+  width: 56px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.steam-import-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.steam-import-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toast {
@@ -1360,5 +1474,14 @@ button {
 
   .hero-overlay {
     padding: var(--space-2);
+  }
+
+  .steam-import-item {
+    grid-template-columns: auto 44px minmax(0, 1fr);
+  }
+
+  .steam-import-item img {
+    width: 44px;
+    height: 66px;
   }
 }
