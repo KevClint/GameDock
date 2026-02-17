@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, nativeImage, shell, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const store = require('./store');
 const { createTray } = require('./tray');
 const { ERROR_MAP, fail, makeError, toMessage } = require('./error-service');
@@ -26,11 +26,31 @@ const SESSION_POLL_INTERVAL_MS = 5000;
 const COVER_WIDTH = 600;
 const COVER_HEIGHT = 900;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const BOOSTER_RECHECK_DELAY_MS = 700;
+const BOOSTER_BLOCKED_IMAGE_NAMES = new Set([
+  'csrss.exe',
+  'dwm.exe',
+  'electron.exe',
+  'explorer.exe',
+  'fontdrvhost.exe',
+  'gamedock.exe',
+  'lsass.exe',
+  'services.exe',
+  'smss.exe',
+  'svchost.exe',
+  'system',
+  'system idle process',
+  'taskhostw.exe',
+  'wininit.exe',
+  'winlogon.exe',
+]);
 
 let mainWindow;
 let appData = sanitizeData(store.load());
 const runningSessions = new Map();
 let sessionPollTimer = null;
+const DARK_WINDOW_BACKGROUND = '#0f0f0f';
+const LIGHT_WINDOW_BACKGROUND = '#f4f6fb';
 
 function hasActiveWindow() {
   return Boolean(mainWindow && !mainWindow.isDestroyed());
@@ -75,6 +95,11 @@ function saveAppData() {
   appData = safe;
   store.save(safe);
   return safe;
+}
+
+function resolveWindowBackgroundColor(settings) {
+  const mode = String(settings?.themeMode || '').trim().toLowerCase();
+  return mode === 'light' ? LIGHT_WINDOW_BACKGROUND : DARK_WINDOW_BACKGROUND;
 }
 
 function resolveGameById(id) {
@@ -149,12 +174,193 @@ function isProcessRunning(pid) {
   }
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function runExecFile(command, args, timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    execFile(
+      command,
+      args,
+      { windowsHide: true, timeout: timeoutMs, maxBuffer: 1024 * 1024 },
+      (error, stdout, stderr) => {
+        resolve({
+          ok: !error,
+          error,
+          stdout: String(stdout || ''),
+          stderr: String(stderr || ''),
+        });
+      },
+    );
+  });
+}
+
+function normalizeBoosterTarget(rawTarget) {
+  const raw = String(rawTarget || '').trim().replace(/^['"]+|['"]+$/g, '');
+  if (!raw) return null;
+
+  if (path.isAbsolute(raw)) {
+    const absolutePath = normalizePath(raw);
+    if (!/\.exe$/i.test(absolutePath)) return null;
+    const imageName = path.basename(absolutePath).toLowerCase();
+    if (!imageName || BOOSTER_BLOCKED_IMAGE_NAMES.has(imageName)) return null;
+    return {
+      imageName,
+      launchCommand: absolutePath,
+      absolutePath,
+    };
+  }
+
+  let imageName = path.basename(raw).toLowerCase();
+  if (!imageName) return null;
+  if (!/^[a-z0-9._ -]+$/i.test(imageName)) return null;
+  if (!/\.exe$/i.test(imageName)) imageName = `${imageName}.exe`;
+  if (BOOSTER_BLOCKED_IMAGE_NAMES.has(imageName)) return null;
+  return {
+    imageName,
+    launchCommand: imageName,
+    absolutePath: null,
+  };
+}
+
+function getBoosterConfig() {
+  const settings = appData.settings || {};
+  const source = Array.isArray(settings.boosterTargets) ? settings.boosterTargets : [];
+  const targets = [];
+  const seen = new Set();
+
+  source.forEach((rawTarget) => {
+    const target = normalizeBoosterTarget(rawTarget);
+    if (!target) return;
+    if (seen.has(target.imageName)) return;
+    seen.add(target.imageName);
+    targets.push(target);
+  });
+
+  return {
+    enabled: Boolean(settings.boosterEnabled),
+    forceKill: Boolean(settings.boosterForceKill),
+    restoreOnExit: settings.boosterRestoreOnExit !== false,
+    targets,
+  };
+}
+
+async function countRunningProcessesByImageName(imageName) {
+  if (process.platform !== 'win32') return 0;
+  const filter = `IMAGENAME eq ${imageName}`;
+  const result = await runExecFile('tasklist', ['/FI', filter, '/FO', 'CSV', '/NH']);
+  if (!result.ok) return 0;
+
+  const lines = result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) return 0;
+  if (lines[0].toUpperCase().startsWith('INFO:')) return 0;
+  return lines.filter((line) => line.startsWith('"')).length;
+}
+
+async function closeProcessTreeByImageName(imageName, force = false) {
+  if (process.platform !== 'win32') return false;
+  const args = ['/IM', imageName, '/T'];
+  if (force) args.push('/F');
+  const result = await runExecFile('taskkill', args);
+  if (result.ok) return true;
+  const output = `${result.stdout}\n${result.stderr}`.toLowerCase();
+  return output.includes('success');
+}
+
+async function runBoosterPreLaunch(config = getBoosterConfig()) {
+  if (process.platform !== 'win32') return [];
+  if (!config.enabled || config.targets.length === 0) return [];
+
+  const closedTargets = [];
+  for (const target of config.targets) {
+    const runningBefore = await countRunningProcessesByImageName(target.imageName);
+    if (runningBefore <= 0) continue;
+
+    await closeProcessTreeByImageName(target.imageName, false);
+    await delay(BOOSTER_RECHECK_DELAY_MS);
+    let runningAfter = await countRunningProcessesByImageName(target.imageName);
+
+    if (runningAfter > 0 && config.forceKill) {
+      await closeProcessTreeByImageName(target.imageName, true);
+      await delay(BOOSTER_RECHECK_DELAY_MS);
+      runningAfter = await countRunningProcessesByImageName(target.imageName);
+    }
+
+    if (runningAfter === 0) {
+      closedTargets.push({
+        imageName: target.imageName,
+        launchCommand: target.launchCommand,
+        absolutePath: target.absolutePath,
+      });
+    }
+  }
+
+  return closedTargets;
+}
+
+function relaunchBoosterTarget(target) {
+  if (!target || typeof target !== 'object') return false;
+  try {
+    if (target.absolutePath && fs.existsSync(target.absolutePath)) {
+      const child = spawn(target.absolutePath, [], {
+        cwd: path.dirname(target.absolutePath),
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false,
+      });
+      child.unref();
+      return true;
+    }
+
+    const launchCommand = String(target.launchCommand || target.imageName || '').trim();
+    if (!launchCommand) return false;
+    const escaped = launchCommand.replace(/"/g, '""');
+    const child = spawn(`start "" "${escaped}"`, {
+      shell: true,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+    return true;
+  } catch (error) {
+    console.error(`Booster restore failed for ${target?.imageName || 'unknown'}:`, error);
+    return false;
+  }
+}
+
+async function restoreBoosterAfterSession(session, exitReason = 'normal') {
+  if (process.platform !== 'win32') return;
+  if (exitReason === 'forced') return;
+
+  const mustRestore = exitReason === 'launch-failed';
+  const closedTargets = Array.isArray(session?.boosterClosedApps) ? session.boosterClosedApps : [];
+  if (closedTargets.length === 0) return;
+
+  const shouldRestore = session?.boosterRestoreOnExit !== false;
+  if (!shouldRestore && !mustRestore) return;
+
+  for (const target of closedTargets) {
+    const imageName = String(target?.imageName || '').trim().toLowerCase();
+    if (!imageName) continue;
+    const stillRunning = await countRunningProcessesByImageName(imageName);
+    if (stillRunning > 0) continue;
+    relaunchBoosterTarget(target);
+  }
+}
+
 function finalizeSession(gameId, session, exitReason = 'normal') {
   runningSessions.delete(gameId);
   const game = resolveGameById(gameId);
   if (!game) {
     syncActiveSessionsToSettings();
     saveAppData();
+    void restoreBoosterAfterSession(session, exitReason);
     return;
   }
 
@@ -179,6 +385,7 @@ function finalizeSession(gameId, session, exitReason = 'normal') {
 
   syncActiveSessionsToSettings();
   saveAppData();
+  void restoreBoosterAfterSession(session, exitReason);
 }
 
 function pollRunningSessions() {
@@ -259,7 +466,7 @@ function isAllowedLaunchTarget(game) {
   return isValidExecutablePath(gamePath, { allowNetworkPaths: false }) && fs.existsSync(gamePath);
 }
 
-function launchGameInternal(game) {
+async function launchGameInternal(game) {
   if (!isAllowedLaunchTarget(game)) {
     return fail('ERR_BLOCKED_PATH');
   }
@@ -276,6 +483,15 @@ function launchGameInternal(game) {
     return fail('ERR_WORKING_DIR_NOT_FOUND');
   }
 
+  let boosterClosedApps = [];
+  const boosterConfig = getBoosterConfig();
+  try {
+    boosterClosedApps = await runBoosterPreLaunch(boosterConfig);
+  } catch (error) {
+    console.error('Booster pre-launch flow failed:', error);
+    boosterClosedApps = [];
+  }
+
   try {
     const child = spawn(executablePath, launchArgs, {
       cwd,
@@ -289,6 +505,8 @@ function launchGameInternal(game) {
       pid: child.pid,
       startedAt,
       lastSeenAt: startedAt,
+      boosterClosedApps,
+      boosterRestoreOnExit: boosterConfig.restoreOnExit,
     });
     applyLaunchStats(game, startedAt);
     startSessionMonitor();
@@ -310,11 +528,17 @@ function launchGameInternal(game) {
     child.unref();
     return { success: true, pid: child.pid };
   } catch (err) {
+    if (boosterClosedApps.length > 0) {
+      void restoreBoosterAfterSession({
+        boosterClosedApps,
+        boosterRestoreOnExit: boosterConfig.restoreOnExit,
+      }, 'launch-failed');
+    }
     return fail(mapLaunchErrorToCode(err), { details: toMessage(err) });
   }
 }
 
-function launchGameById(id) {
+async function launchGameById(id) {
   const game = resolveGameById(id);
   if (!game) return fail('ERR_GAME_NOT_FOUND');
   return launchGameInternal(game);
@@ -345,13 +569,312 @@ function removeFileIfExists(filePath) {
   }
 }
 
-function saveImageBufferAsPng(buffer, targetPath, width, height) {
+function isPathInside(rootPath, targetPath) {
+  const root = path.resolve(rootPath);
+  const target = path.resolve(targetPath);
+  if (root === target) return true;
+  const relative = path.relative(root, target);
+  return Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative);
+}
+
+function resolveSafeCleanupPath(rawPath, { allowTempRoot = false } = {}) {
+  if (!rawPath || typeof rawPath !== 'string') return null;
+  const candidate = path.resolve(rawPath);
+  const userDataRoot = path.resolve(app.getPath('userData'));
+  if (isPathInside(userDataRoot, candidate)) return candidate;
+
+  if (allowTempRoot) {
+    const tempRoot = path.resolve(app.getPath('temp'));
+    if (isPathInside(tempRoot, candidate)) return candidate;
+  }
+
+  return null;
+}
+
+async function pathExists(targetPath) {
+  try {
+    await fs.promises.access(targetPath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function collectPathStats(targetPath) {
+  const safePath = resolveSafeCleanupPath(targetPath, { allowTempRoot: true });
+  if (!safePath || !(await pathExists(safePath))) return { bytes: 0, files: 0 };
+
+  let bytes = 0;
+  let files = 0;
+  let processed = 0;
+  const stack = [safePath];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let stat;
+    try {
+      stat = await fs.promises.lstat(current);
+    } catch {
+      continue;
+    }
+
+    if (stat.isSymbolicLink() || stat.isFile()) {
+      files += 1;
+      bytes += Number(stat.size) || 0;
+    } else if (stat.isDirectory()) {
+      try {
+        const children = await fs.promises.readdir(current);
+        children.forEach((name) => stack.push(path.join(current, name)));
+      } catch {
+        // continue scanning others
+      }
+    }
+
+    processed += 1;
+    if (processed % 400 === 0) {
+      await delay(0);
+    }
+  }
+
+  return { bytes, files };
+}
+
+async function clearDirectoryContents(targetDir) {
+  const safeDir = resolveSafeCleanupPath(targetDir, { allowTempRoot: true });
+  if (!safeDir || !(await pathExists(safeDir))) {
+    return { freedBytes: 0, removedFiles: 0, removedEntries: 0 };
+  }
+
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(safeDir, { withFileTypes: true });
+  } catch {
+    return { freedBytes: 0, removedFiles: 0, removedEntries: 0 };
+  }
+
+  let freedBytes = 0;
+  let removedFiles = 0;
+  let removedEntries = 0;
+  for (const entry of entries) {
+    const entryPath = path.join(safeDir, entry.name);
+    const stat = await collectPathStats(entryPath);
+    try {
+      await fs.promises.rm(entryPath, { recursive: true, force: true, maxRetries: 2, retryDelay: 60 });
+      freedBytes += stat.bytes;
+      removedFiles += stat.files;
+      removedEntries += 1;
+    } catch {
+      // Continue cleaning other entries.
+    }
+  }
+
+  return { freedBytes, removedFiles, removedEntries };
+}
+
+async function getOrphanArtworkDirs() {
+  const coversRoot = getCoversRoot();
+  if (!(await pathExists(coversRoot))) return [];
+
+  const gameIds = new Set(
+    appData.games
+      .map((game) => String(Number(game.id)))
+      .filter((id) => id !== 'NaN'),
+  );
+  const steamIds = new Set(
+    appData.games
+      .map((game) => Number(game.steamAppId))
+      .filter((id) => Number.isFinite(id))
+      .map((id) => String(id)),
+  );
+
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(coversRoot, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const orphans = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const fullPath = path.join(coversRoot, entry.name);
+    if (entry.name.toLowerCase() === 'steam') {
+      let steamEntries = [];
+      try {
+        steamEntries = await fs.promises.readdir(fullPath, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+
+      for (const steamEntry of steamEntries) {
+        if (!steamEntry.isDirectory()) continue;
+        if (steamIds.has(steamEntry.name)) continue;
+        orphans.push(path.join(fullPath, steamEntry.name));
+      }
+      continue;
+    }
+
+    if (gameIds.has(entry.name)) continue;
+    orphans.push(fullPath);
+  }
+
+  return orphans;
+}
+
+function getCleanupTargets() {
+  const userDataPath = app.getPath('userData');
+  const tempPath = app.getPath('temp');
+
+  return [
+    {
+      key: 'app-cache',
+      label: 'App Cache',
+      description: 'Chromium cache and GPU shader cache used by GameDock.',
+      paths: [
+        path.join(userDataPath, 'Cache'),
+        path.join(userDataPath, 'Code Cache'),
+        path.join(userDataPath, 'GPUCache'),
+        path.join(userDataPath, 'DawnCache'),
+        path.join(userDataPath, 'GrShaderCache'),
+        path.join(userDataPath, 'blob_storage'),
+      ],
+    },
+    {
+      key: 'runtime-logs',
+      label: 'Crash & Log Files',
+      description: 'Crashpad reports and app logs generated over time.',
+      paths: [
+        path.join(userDataPath, 'Crashpad'),
+        path.join(userDataPath, 'logs'),
+      ],
+    },
+    {
+      key: 'temp-files',
+      label: 'GameDock Temp Files',
+      description: 'Temporary files from import/download operations.',
+      paths: [
+        path.join(tempPath, 'GameDock'),
+      ],
+      allowTempRoot: true,
+    },
+    {
+      key: 'orphan-artwork',
+      label: 'Orphan Artwork',
+      description: 'Cover and logo folders no longer referenced by your library.',
+      paths: [],
+      dynamic: 'orphan-artwork',
+    },
+  ];
+}
+
+async function getCleanupReport() {
+  const targets = getCleanupTargets();
+  const items = [];
+  for (const target of targets) {
+    let bytes = 0;
+    let files = 0;
+    let pathCount = 0;
+
+    if (target.dynamic === 'orphan-artwork') {
+      const orphanDirs = await getOrphanArtworkDirs();
+      pathCount = orphanDirs.length;
+      for (const dirPath of orphanDirs) {
+        const stat = await collectPathStats(dirPath);
+        bytes += stat.bytes;
+        files += stat.files;
+      }
+    } else {
+      for (const rawPath of target.paths) {
+        const safePath = resolveSafeCleanupPath(rawPath, { allowTempRoot: Boolean(target.allowTempRoot) });
+        if (!safePath || !(await pathExists(safePath))) continue;
+        pathCount += 1;
+        const stat = await collectPathStats(safePath);
+        bytes += stat.bytes;
+        files += stat.files;
+      }
+    }
+
+    items.push({
+      key: target.key,
+      label: target.label,
+      description: target.description,
+      bytes,
+      files,
+      pathCount,
+    });
+  }
+
+  const totalBytes = items.reduce((sum, item) => sum + item.bytes, 0);
+  const totalFiles = items.reduce((sum, item) => sum + item.files, 0);
+  return {
+    scannedAt: now(),
+    totalBytes,
+    totalFiles,
+    items,
+  };
+}
+
+async function runCleanupForTargets(requestedKeys) {
+  const targets = getCleanupTargets();
+  const requestedSet = new Set(
+    Array.isArray(requestedKeys)
+      ? requestedKeys.map((key) => String(key || '').trim()).filter(Boolean)
+      : targets.map((target) => target.key),
+  );
+
+  let freedBytes = 0;
+  let removedFiles = 0;
+  const cleanedTargets = [];
+  const selectedTargets = [];
+
+  for (const target of targets) {
+    if (!requestedSet.has(target.key)) continue;
+    selectedTargets.push(target.key);
+
+    let targetFreed = 0;
+    let targetFiles = 0;
+
+    if (target.dynamic === 'orphan-artwork') {
+      const orphanDirs = await getOrphanArtworkDirs();
+      for (const dirPath of orphanDirs) {
+        const stat = await collectPathStats(dirPath);
+        try {
+          await fs.promises.rm(dirPath, { recursive: true, force: true, maxRetries: 2, retryDelay: 60 });
+          targetFreed += stat.bytes;
+          targetFiles += stat.files;
+        } catch {
+          // no-op
+        }
+      }
+    } else {
+      for (const rawPath of target.paths) {
+        const safePath = resolveSafeCleanupPath(rawPath, { allowTempRoot: Boolean(target.allowTempRoot) });
+        if (!safePath || !(await pathExists(safePath))) continue;
+        const result = await clearDirectoryContents(safePath);
+        targetFreed += result.freedBytes;
+        targetFiles += result.removedFiles;
+      }
+    }
+
+    if (targetFreed > 0 || targetFiles > 0) {
+      cleanedTargets.push(target.key);
+    }
+    freedBytes += targetFreed;
+    removedFiles += targetFiles;
+    await delay(0);
+  }
+
+  return { selectedTargets, cleanedTargets, freedBytes, removedFiles };
+}
+
+function saveImageBufferOptimized(buffer, targetPath, width, height) {
   const image = nativeImage.createFromBuffer(buffer);
   if (!image || image.isEmpty()) {
     throw new Error('ERR_IMAGE_INVALID');
   }
   const resized = image.resize({ width, height, quality: 'best' });
-  fs.writeFileSync(targetPath, resized.toPNG());
+  fs.writeFileSync(targetPath, resized.toWebP({ quality: 80 }));
 }
 
 async function fetchBinary(url, timeoutMs = 15000) {
@@ -381,7 +904,7 @@ async function setCustomCoverForGame(gameId, source, value) {
 
   const coverDir = getGameCoverDir(game.id);
   ensureDir(coverDir);
-  const coverPath = path.join(coverDir, 'cover.png');
+  const coverPath = path.join(coverDir, 'cover.webp');
 
   try {
     let buffer;
@@ -395,7 +918,7 @@ async function setCustomCoverForGame(gameId, source, value) {
       return fail('ERR_IMAGE_INVALID');
     }
 
-    saveImageBufferAsPng(buffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
+    saveImageBufferOptimized(buffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
     game.coverPath = coverPath;
     saveAppData();
     return { success: true, coverPath };
@@ -467,8 +990,8 @@ async function downloadSteamArtworkIfNeeded(game, appId, coverUrl, logoUrl) {
   if (coverUrl) {
     try {
       const coverBuffer = await fetchBinary(coverUrl);
-      const coverPath = path.join(artDir, 'cover.png');
-      saveImageBufferAsPng(coverBuffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
+      const coverPath = path.join(artDir, 'cover.webp');
+      saveImageBufferOptimized(coverBuffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
       game.coverPath = coverPath;
     } catch {
       // continue without cover
@@ -478,8 +1001,8 @@ async function downloadSteamArtworkIfNeeded(game, appId, coverUrl, logoUrl) {
   if (logoUrl) {
     try {
       const logoBuffer = await fetchBinary(logoUrl);
-      const logoPath = path.join(artDir, 'logo.png');
-      saveImageBufferAsPng(logoBuffer, logoPath, 512, 256);
+      const logoPath = path.join(artDir, 'logo.webp');
+      saveImageBufferOptimized(logoBuffer, logoPath, 512, 256);
       game.logoPath = logoPath;
     } catch {
       // continue without logo
@@ -619,7 +1142,7 @@ function createWindow() {
     alwaysOnTop: Boolean(appData.settings?.alwaysOnTop),
     skipTaskbar: false,
     transparent: false,
-    backgroundColor: '#0f0f0f',
+    backgroundColor: resolveWindowBackgroundColor(appData.settings),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -674,7 +1197,7 @@ function createWindow() {
   createTray(
     mainWindow,
     () => appData,
-    (id) => launchGameById(id),
+    (id) => { void launchGameById(id); },
   );
 }
 
@@ -723,7 +1246,13 @@ ipcMain.handle('save-data', (_, data) => {
   const previousActiveSessions = appData.settings?.activeSessions || {};
   appData = sanitizeData(data);
   appData.settings.activeSessions = previousActiveSessions;
-  return store.save(appData);
+  const saved = store.save(appData);
+  if (saved) {
+    withMainWindow((win) => {
+      win.setBackgroundColor(resolveWindowBackgroundColor(appData.settings));
+    });
+  }
+  return saved;
 });
 
 ipcMain.handle('set-sort-order', (_, orderedIds) => {
@@ -743,7 +1272,7 @@ ipcMain.handle('set-sort-order', (_, orderedIds) => {
 });
 
 ipcMain.handle('update-game', async (_, payload) => {
-  const input = sanitizeGame(payload);
+  const input = sanitizeGame(payload, appData.categories);
   const game = resolveGameById(input.id);
   if (!game) return fail('ERR_GAME_NOT_FOUND');
 
@@ -816,6 +1345,9 @@ ipcMain.handle('import-data', async () => {
     const parsed = JSON.parse(raw);
     appData = sanitizeData(parsed);
     store.save(appData);
+    withMainWindow((win) => {
+      win.setBackgroundColor(resolveWindowBackgroundColor(appData.settings));
+    });
     return { success: true, data: appData };
   } catch (err) {
     return fail('ERR_IMPORT_FAIL', { details: toMessage(err) });
@@ -826,6 +1358,31 @@ ipcMain.handle('get-app-info', () => ({
   name: app.getName(),
   version: app.getVersion(),
 }));
+
+ipcMain.handle('get-cleanup-stats', async () => {
+  try {
+    return { success: true, report: await getCleanupReport() };
+  } catch (err) {
+    return fail('ERR_CLEANUP_FAIL', { details: toMessage(err) });
+  }
+});
+
+ipcMain.handle('run-cleanup', async (_, payload) => {
+  try {
+    const requestedTargets = Array.isArray(payload?.targets) ? payload.targets : null;
+    const result = await runCleanupForTargets(requestedTargets);
+    return {
+      success: true,
+      selectedTargets: result.selectedTargets,
+      cleanedTargets: result.cleanedTargets,
+      freedBytes: result.freedBytes,
+      removedFiles: result.removedFiles,
+      report: await getCleanupReport(),
+    };
+  } catch (err) {
+    return fail('ERR_CLEANUP_FAIL', { details: toMessage(err) });
+  }
+});
 
 ipcMain.handle('get-rawg-key', () => readRawgApiKey());
 
@@ -1005,7 +1562,7 @@ ipcMain.handle('import-steam-games', async (_, payload) => {
       coverPath: null,
       logoPath: null,
       steamAppId: Number.isFinite(Number(item?.steamAppId)) ? Number(item.steamAppId) : null,
-    });
+    }, appData.categories);
 
     const normalized = normalizePath(candidate.path).toLowerCase();
     if (!isValidExecutablePath(candidate.path, { allowNetworkPaths: false }) || !fs.existsSync(candidate.path)) {
@@ -1039,7 +1596,7 @@ ipcMain.handle('launch-game', async (_, launchRequest) => {
     return fail('ERR_INVALID_LAUNCH');
   }
 
-  const game = sanitizeGame(launchRequest);
+  const game = sanitizeGame(launchRequest, appData.categories);
   const storedGame = resolveGameById(game.id);
   if (!storedGame) return fail('ERR_GAME_NOT_FOUND');
 

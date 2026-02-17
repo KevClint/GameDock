@@ -46,10 +46,27 @@
       </nav>
 
       <nav class="nav-secondary">
+        <button class="nav-item" data-nav="cleaner" title="Cleaner">
+          <span class="material-symbols-outlined">cleaning_services</span>
+          <span class="nav-label">Cleaner</span>
+        </button>
         <button class="nav-item" data-nav="settings-nav" title="Settings">
           <span class="material-symbols-outlined">tune</span>
           <span class="nav-label">Settings</span>
         </button>
+        <div class="sort-controls sidebar-sort" id="sidebar-sort" title="Sort Library">
+          <button type="button" id="sort-trigger" class="sort-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Sort games">
+            <span class="material-symbols-outlined sort-icon" aria-hidden="true">sort</span>
+            <span class="sort-label" id="sort-label">Last Played</span>
+            <span class="material-symbols-outlined sort-chevron" aria-hidden="true">expand_more</span>
+          </button>
+          <div id="sort-menu" class="sort-menu" role="listbox" hidden>
+            <button type="button" class="sort-option" data-sort="lastPlayed" role="option">Last Played</button>
+            <button type="button" class="sort-option" data-sort="playtime" role="option">Playtime</button>
+            <button type="button" class="sort-option" data-sort="name" role="option">Name</button>
+            <button type="button" class="sort-option" data-sort="favoritesOnly" role="option">Favorites Only</button>
+          </div>
+        </div>
       </nav>
     </aside>
 
@@ -81,21 +98,8 @@
       <section id="view-library" class="view-panel is-active">
         <div class="filter-bar">
           <div class="categories" id="categories">
-            <button class="cat-btn active" data-cat="all">All Games</button>
-            <button class="cat-btn" data-cat="FPS">FPS</button>
-            <button class="cat-btn" data-cat="MOBA">MOBA</button>
-            <button class="cat-btn" data-cat="RPG">RPG</button>
-            <button class="cat-btn" data-cat="RTS">RTS</button>
-            <button class="cat-btn" data-cat="Other">Other</button>
-            <div class="sort-controls">
-              <label for="sort-mode">Sort</label>
-              <select id="sort-mode">
-                <option value="lastPlayed">Last Played</option>
-                <option value="playtime">Playtime</option>
-                <option value="name">Name</option>
-                <option value="favoritesOnly">Favorites Only</option>
-              </select>
-            </div>
+            <div id="category-list" class="category-list"></div>
+            <button class="cat-btn" id="btn-add-category" type="button" title="Add Category">Add (+)</button>
           </div>
         </div>
 
@@ -214,6 +218,47 @@
           </section>
         </div>
       </section>
+      <section id="view-cleaner" class="view-panel" hidden>
+        <div class="cleaner-shell">
+          <section class="cleaner-summary-card">
+            <div class="cleaner-summary-copy">
+              <h3>System Cleaner</h3>
+              <p class="meta-text">Safe cleanup for GameDock cache, temp files, and orphan artwork.</p>
+            </div>
+            <div class="cleaner-summary-stats">
+              <div class="cleaner-stat">
+                <span class="cleaner-stat-label">Reclaimable Space</span>
+                <strong id="cleaner-total-space">0 B</strong>
+              </div>
+              <div class="cleaner-stat">
+                <span class="cleaner-stat-label">Scan Result</span>
+                <strong id="cleaner-total-files">0 files</strong>
+              </div>
+            </div>
+            <div class="cleaner-actions">
+              <button class="btn-secondary" id="btn-cleaner-analyze">
+                <span class="material-symbols-outlined">manage_search</span>
+                <span class="cleaner-action-label">Analyze</span>
+              </button>
+              <button class="btn-primary" id="btn-cleaner-run">
+                <span class="material-symbols-outlined">cleaning_services</span>
+                <span class="cleaner-action-label">Clean Selected</span>
+              </button>
+            </div>
+          </section>
+          <section class="cleaner-targets-card">
+            <div class="view-block-header">
+              <h3>Cleanup Targets</h3>
+              <span id="cleaner-updated-at" class="meta-text">Not scanned yet</span>
+            </div>
+            <div id="cleaner-target-list" class="cleaner-target-list"></div>
+          </section>
+          <section class="cleaner-result-card" id="cleaner-result-card" hidden>
+            <h3>Last Cleanup</h3>
+            <p id="cleaner-result-text" class="meta-text">No cleanup run yet.</p>
+          </section>
+        </div>
+      </section>
       <section id="view-settings" class="view-panel" hidden>
         <section class="settings-content settings-section">
           <h3>App Behavior</h3>
@@ -266,6 +311,23 @@
               <input type="checkbox" id="set-simplified-cards" />
               <span class="switch-slider"></span>
             </label>
+          </div>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Theme Mode</div>
+              <div class="settings-desc">Switch between dark and light appearance.</div>
+            </div>
+            <select id="set-theme-mode" class="settings-select" aria-label="Theme Mode">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <div class="settings-copy">
+              <div class="settings-name">Accent Color</div>
+              <div class="settings-desc">Customize the highlight color used across buttons and UI accents.</div>
+            </div>
+            <input type="color" id="set-accent-color" class="color-input" value="#8b5cf6" aria-label="Accent Color" />
           </div>
           <h3>System</h3>
           <div class="settings-row">
@@ -322,7 +384,6 @@
             <option value="FPS">FPS</option>
             <option value="MOBA">MOBA</option>
             <option value="RPG">RPG</option>
-            <option value="RTS">RTS</option>
             <option value="Other">Other</option>
           </select>
         </div>
@@ -397,7 +458,7 @@
 
   <div class="toast" style="display:none"></div>
 
-  <script src="renderer.js"></script>
+  <script type="module" src="renderer.js"></script>
 </body>
 </html>
 

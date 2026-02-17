@@ -15,6 +15,8 @@ const api = Object.freeze({
   detectSteamGames: ()    => ipcRenderer.invoke('detect-steam-games'),
   importSteamGames: (payload) => ipcRenderer.invoke('import-steam-games', payload),
   setSortOrder: (orderedIds) => ipcRenderer.invoke('set-sort-order', orderedIds),
+  getCleanupStats: ()     => ipcRenderer.invoke('get-cleanup-stats'),
+  runCleanup: (payload)   => ipcRenderer.invoke('run-cleanup', payload),
 
   // Games
   browseGame:    ()       => ipcRenderer.invoke('browse-game'),

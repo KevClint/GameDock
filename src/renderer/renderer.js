@@ -1,25 +1,130 @@
-let appData = { games: [], settings: { autoStart: false, minimizeToTray: true } };
-let activeCategory = 'all';
-let searchQuery = '';
-let selectedGameIds = new Set();
-let activeView = 'library';
-let errorMap = {};
-let sortMode = localStorage.getItem('gamedock.sort.mode') || 'lastPlayed';
-let contextMenuGameId = null;
-let steamDetectCandidates = [];
+import {
+  getAppData,
+  addCategory,
+  setAppData,
+  getActiveCategory,
+  setActiveCategory,
+  getSearchQuery,
+  setSearchQuery,
+  getSelectedGameIds,
+  setSelectedGameIds,
+  getActiveView,
+  setActiveView as setStateActiveView,
+  getErrorMap,
+  setErrorMap,
+  getSortMode,
+  setSortMode,
+  getContextMenuGameId,
+  setContextMenuGameId,
+  getSteamDetectCandidates,
+  setSteamDetectCandidates,
+  getDiscoveryLoaded,
+  setDiscoveryLoaded,
+  getDiscoveryLoading,
+  setDiscoveryLoading,
+  getDiscoveryEntryTimers,
+  getCommunityLoaded,
+  setCommunityLoaded,
+  getCommunityFeedPage,
+  setCommunityFeedPage,
+  getCommunityFeedHasMore,
+  setCommunityFeedHasMore,
+  getCommunityFeedLoadingMore,
+  setCommunityFeedLoadingMore,
+} from './state.js';
+import {
+  configureUI,
+  renderCategories,
+  renderGames,
+  setupTitleBar,
+  showToast,
+  showSaveActionPopup,
+  updateCommunityFeedMoreButton,
+  renderNewsFeed,
+  renderSteamImportList,
+} from './ui.js';
+
+const state = {
+  get appData() { return getAppData(); },
+  set appData(value) { setAppData(value); },
+  get activeCategory() { return getActiveCategory(); },
+  set activeCategory(value) { setActiveCategory(value); },
+  get searchQuery() { return getSearchQuery(); },
+  set searchQuery(value) { setSearchQuery(value); },
+  get selectedGameIds() { return getSelectedGameIds(); },
+  set selectedGameIds(value) { setSelectedGameIds(value); },
+  get activeView() { return getActiveView(); },
+  set activeView(value) { setStateActiveView(value); },
+  get errorMap() { return getErrorMap(); },
+  set errorMap(value) { setErrorMap(value); },
+  get sortMode() { return getSortMode(); },
+  set sortMode(value) { setSortMode(value); },
+  get contextMenuGameId() { return getContextMenuGameId(); },
+  set contextMenuGameId(value) { setContextMenuGameId(value); },
+  get steamDetectCandidates() { return getSteamDetectCandidates(); },
+  set steamDetectCandidates(value) { setSteamDetectCandidates(value); },
+  get discoveryLoaded() { return getDiscoveryLoaded(); },
+  set discoveryLoaded(value) { setDiscoveryLoaded(value); },
+  get discoveryLoading() { return getDiscoveryLoading(); },
+  set discoveryLoading(value) { setDiscoveryLoading(value); },
+  get discoveryEntryTimers() { return getDiscoveryEntryTimers(); },
+  get communityLoaded() { return getCommunityLoaded(); },
+  set communityLoaded(value) { setCommunityLoaded(value); },
+  get communityFeedPage() { return getCommunityFeedPage(); },
+  set communityFeedPage(value) { setCommunityFeedPage(value); },
+  get communityFeedHasMore() { return getCommunityFeedHasMore(); },
+  set communityFeedHasMore(value) { setCommunityFeedHasMore(value); },
+  get communityFeedLoadingMore() { return getCommunityFeedLoadingMore(); },
+  set communityFeedLoadingMore(value) { setCommunityFeedLoadingMore(value); },
+  async addCategory(name) { return addCategory(name); },
+};
 
 const CARD_LAUNCH_GUARD_MS = 300;
-
-let discoveryLoaded = false;
-let discoveryLoading = false;
 const DISCOVERY_CACHE_KEY = 'gamedock.discovery.cache.v1';
 const DISCOVERY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const discoveryEntryTimers = new Set();
-let communityLoaded = false;
-let communityFeedPage = 1;
-let communityFeedHasMore = false;
-let communityFeedLoadingMore = false;
+
 const COMMUNITY_PAGE_SIZE = 12; 
+const cleanerState = {
+  loaded: false,
+  loading: false,
+  report: null,
+};
+const DEFAULT_ACCENT_COLOR = '#8b5cf6';
+const DEFAULT_THEME_MODE = 'dark';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const VALID_THEME_MODES = new Set(['dark', 'light']);
+
+function normalizeAccentColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_ACCENT_COLOR;
+}
+
+function normalizeThemeMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_THEME_MODES.has(mode) ? mode : DEFAULT_THEME_MODE;
+}
+
+function hexToRgbTriplet(hexColor) {
+  const normalized = normalizeAccentColor(hexColor);
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
+function applyAccentColor(value) {
+  const normalized = normalizeAccentColor(value);
+  const root = document.documentElement;
+  root.style.setProperty('--primary-color', normalized);
+  root.style.setProperty('--primary-color-rgb', hexToRgbTriplet(normalized));
+  return normalized;
+}
+
+function applyThemeMode(value) {
+  const normalized = normalizeThemeMode(value);
+  document.body.dataset.theme = normalized;
+  return normalized;
+}
 
 const MOCK_COMMUNITY_ARTICLES = [
   {
@@ -47,26 +152,32 @@ const MOCK_COMMUNITY_ARTICLES = [
 
 async function init() {
   try {
-    appData = (await window.api.getData()) || appData;
+    state.appData = (await window.api.getData()) || state.appData;
   } catch (error) {
     console.error('Failed to load app data from main process:', error);
-    appData = appData || { games: [], settings: { autoStart: false, minimizeToTray: true } };
+    state.appData = state.appData || { games: [], settings: { autoStart: false, minimizeToTray: true } };
   }
 
   try {
-    errorMap = (await window.api.getErrorMap?.()) || {};
+    state.errorMap = (await window.api.getErrorMap?.()) || {};
   } catch (error) {
     console.error('Failed to load error map:', error);
-    errorMap = {};
+    state.errorMap = {};
   }
+
+  state.appData.settings = state.appData.settings || {};
+  state.appData.settings.themeMode = applyThemeMode(state.appData.settings.themeMode);
+  state.appData.settings.accentColor = applyAccentColor(state.appData.settings.accentColor);
 
   setupTitleBar();
   setupSearch();
   setupCategories();
+  renderCategories();
   setupSortMode();
   setupNavigation();
   setupDiscovery();
   setupCommunityFeed();
+  setupCleaner();
   setupGameContextMenu();
   setupSteamImportWizard();
   setActiveView('library');
@@ -113,7 +224,7 @@ function setDiscoveryRefreshButtonState(isLoading) {
 function setupNavigation() {
   document.querySelectorAll('.nav-item[data-nav]').forEach((item) => {
     item.addEventListener('click', () => {
-      const previousView = activeView;
+      const previousView = state.activeView;
       const nav = item.dataset.nav;
       const targetView = nav === 'settings-nav' ? 'settings' : nav;
       setActiveView(targetView);
@@ -125,11 +236,12 @@ function setupNavigation() {
 }
 
 function setActiveView(viewName) {
-  activeView = viewName;
+  state.activeView = viewName;
   const viewMap = {
     library: 'view-library',
     discover: 'view-discovery',
     community: 'view-community',
+    cleaner: 'view-cleaner',
     settings: 'view-settings',
   };
 
@@ -137,6 +249,7 @@ function setActiveView(viewName) {
     library: 'Library',
     discover: 'Discovery',
     community: 'Community',
+    cleaner: 'Cleaner',
     settings: 'Settings',
   };
 
@@ -160,10 +273,13 @@ function setActiveView(viewName) {
 
   const mainView = document.querySelector('.main-view');
   if (mainView) mainView.classList.toggle('compact-view', viewName !== 'library');
+  const sidebarSort = document.getElementById('sidebar-sort');
+  if (sidebarSort) sidebarSort.hidden = viewName !== 'library';
 
   if (viewName !== 'library') hideDeleteBar();
   if (viewName === 'discover') void loadDiscovery(false);
   if (viewName === 'community') void loadCommunityNews(false);
+  if (viewName === 'cleaner') void refreshCleanerReport({ force: false });
 }
 
 function escapeHtml(value) {
@@ -319,7 +435,7 @@ async function fetchDiscoveryGames({ forceNetwork = false } = {}) {
         const oldHash = cachedRecord?.hash || '';
         if (freshHash !== oldHash) {
           writeDiscoveryCache(freshData);
-          if (activeView === 'discover') renderGameCards(freshData);
+          if (state.activeView === 'discover') renderGameCards(freshData);
         }
       })
       .catch((err) => {
@@ -399,16 +515,16 @@ function staggerRevealCards(container) {
     cards.forEach((card, index) => {
       const timer = setTimeout(() => {
         card.classList.add('is-visible');
-        discoveryEntryTimers.delete(timer);
+        state.discoveryEntryTimers.delete(timer);
       }, index * 18);
-      discoveryEntryTimers.add(timer);
+      state.discoveryEntryTimers.add(timer);
     });
   });
 }
 
 function clearDiscoveryEntryTimers() {
-  discoveryEntryTimers.forEach((timer) => clearTimeout(timer));
-  discoveryEntryTimers.clear();
+  state.discoveryEntryTimers.forEach((timer) => clearTimeout(timer));
+  state.discoveryEntryTimers.clear();
 }
 
 function teardownDiscoveryView() {
@@ -423,7 +539,7 @@ function teardownDiscoveryView() {
   if (indieGrid) indieGrid.textContent = '';
   if (upcomingGrid) upcomingGrid.textContent = '';
   if (topRatedGrid) topRatedGrid.textContent = '';
-  discoveryLoaded = false;
+  state.discoveryLoaded = false;
 }
 
 function renderGameCards(data) {
@@ -547,117 +663,6 @@ function setDiscoveryOfflineMessage(message) {
   }
 }
 
-function formatPublishedAgo(isoDate) {
-  const ts = Date.parse(isoDate || '');
-  if (!Number.isFinite(ts)) return 'just now';
-  const mins = Math.max(1, Math.floor((Date.now() - ts) / 60000));
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-function normalizeArticle(article) {
-  return {
-    source: article?.source || 'Gaming News',
-    title: article?.title || 'Untitled',
-    snippet: article?.snippet || 'No summary available.',
-    url: article?.url || '#',
-    publishedAt: article?.publishedAt || new Date().toISOString(),
-  };
-}
-
-function resolveCommunityHasMore(res) {
-  const explicit = res?.hasMore;
-  if (typeof explicit === 'boolean' && explicit) return true;
-  const count = Array.isArray(res?.articles) ? res.articles.length : 0;
-  return count >= COMMUNITY_PAGE_SIZE;
-}
-
-function createFeedCard(article) {
-  const a = normalizeArticle(article);
-  const card = document.createElement('article');
-  card.className = 'feed-card';
-  card.innerHTML = `
-    <div class="feed-source">${escapeHtml(a.source)} | ${escapeHtml(formatPublishedAgo(a.publishedAt))}</div>
-    <div class="feed-title">${escapeHtml(a.title)}</div>
-    <p class="feed-snippet">${escapeHtml(a.snippet)}</p>
-    <div class="feed-actions">
-      <a class="feed-read" href="${escapeHtml(a.url)}" target="_blank" rel="noreferrer noopener">Read More</a>
-      <button class="feed-share" type="button" title="Share">
-        <span class="material-symbols-outlined">share</span>
-      </button>
-    </div>
-  `;
-
-  const readMoreLink = card.querySelector('.feed-read');
-  if (readMoreLink) {
-    readMoreLink.addEventListener('click', async (event) => {
-      event.preventDefault();
-      const result = await window.api.openExternalUrl?.(a.url);
-      if (!result?.success) {
-        showToast(result?.error || 'ERR_UNKNOWN', 'error');
-      }
-    });
-  }
-
-  const shareBtn = card.querySelector('.feed-share');
-  if (shareBtn) {
-    shareBtn.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(a.url);
-        showSaveActionPopup('Link copied', 'success');
-      } catch {
-        showSaveActionPopup('Could not copy link', 'error');
-      }
-    });
-  }
-
-  return card;
-}
-
-function renderNewsFeed(articles, options = {}) {
-  const { append = false } = options;
-  const list = document.getElementById('community-feed-list');
-  if (!list) return;
-  if (!append) list.textContent = '';
-
-  const normalized = (articles || []).map(normalizeArticle);
-  if (!append && normalized.length === 0) {
-    const empty = document.createElement('article');
-    empty.className = 'feed-card';
-    empty.innerHTML = `
-      <div class="feed-source">Community</div>
-      <div class="feed-title">No news available</div>
-      <p class="feed-snippet">Try again in a moment. Feed sources may be temporarily unavailable.</p>
-    `;
-    list.appendChild(empty);
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-  normalized.forEach((a) => {
-    frag.appendChild(createFeedCard(a));
-  });
-  list.appendChild(frag);
-}
-
-function updateCommunityFeedMoreButton() {
-  const btn = document.getElementById('community-feed-more');
-  if (!btn) return;
-
-  if (communityFeedLoadingMore) {
-    btn.hidden = false;
-    btn.disabled = true;
-    btn.textContent = 'Loading...';
-    return;
-  }
-
-  btn.textContent = 'Show More';
-  btn.disabled = false;
-  btn.hidden = !communityFeedHasMore;
-}
 
 function setCommunityUiState(state) {
   const loading = document.getElementById('community-loading');
@@ -682,6 +687,13 @@ function setCommunityMoreLoadingState(isLoading) {
   loadingMore.classList.toggle('is-hidden', !isLoading);
 }
 
+function resolveCommunityHasMore(res) {
+  const explicit = res?.hasMore;
+  if (typeof explicit === 'boolean' && explicit) return true;
+  const count = Array.isArray(res?.articles) ? res.articles.length : 0;
+  return count >= COMMUNITY_PAGE_SIZE;
+}
+
 function setupCommunityFeed() {
   const btn = document.getElementById('community-feed-more');
   if (!btn) return;
@@ -694,12 +706,12 @@ function setupCommunityFeed() {
 }
 
 async function loadMoreCommunityNews() {
-  if (communityFeedLoadingMore || !communityFeedHasMore) return;
+  if (state.communityFeedLoadingMore || !state.communityFeedHasMore) return;
 
-  communityFeedLoadingMore = true;
+  state.communityFeedLoadingMore = true;
   setCommunityMoreLoadingState(true);
   updateCommunityFeedMoreButton();
-  const nextPage = communityFeedPage + 1;
+  const nextPage = state.communityFeedPage + 1;
 
   try {
     const res = await window.api.getCommunityNews?.({
@@ -709,59 +721,207 @@ async function loadMoreCommunityNews() {
 
     if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
       renderNewsFeed(res.articles, { append: true });
-      communityFeedPage = nextPage;
-      communityFeedHasMore = resolveCommunityHasMore(res);
+      state.communityFeedPage = nextPage;
+      state.communityFeedHasMore = resolveCommunityHasMore(res);
       return;
     }
 
-    communityFeedHasMore = false;
+    state.communityFeedHasMore = false;
     if (res?.error) showToast(res.error, 'error');
   } catch (err) {
-    communityFeedHasMore = false;
+    state.communityFeedHasMore = false;
     showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
   } finally {
-    communityFeedLoadingMore = false;
+    state.communityFeedLoadingMore = false;
     setCommunityMoreLoadingState(false);
     updateCommunityFeedMoreButton();
   }
 }
 
 async function loadCommunityNews(force = false) {
-  if (communityLoaded && !force) return;
-  communityFeedPage = 1;
-  communityFeedHasMore = false;
-  communityFeedLoadingMore = false;
+  if (state.communityLoaded && !force) return;
+  state.communityFeedPage = 1;
+  state.communityFeedHasMore = false;
+  state.communityFeedLoadingMore = false;
   setCommunityUiState('loading');
   setCommunityMoreLoadingState(false);
   updateCommunityFeedMoreButton();
 
   try {
     const res = await window.api.getCommunityNews?.({
-      page: communityFeedPage,
+      page: state.communityFeedPage,
       pageSize: COMMUNITY_PAGE_SIZE,
     });
     if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
       renderNewsFeed(res.articles);
-      communityFeedHasMore = resolveCommunityHasMore(res);
+      state.communityFeedHasMore = resolveCommunityHasMore(res);
     } else {
       renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
-      communityFeedHasMore = false;
+      state.communityFeedHasMore = false;
       if (res?.error) showToast(res.error, 'error');
     }
   } catch (err) {
     showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
     renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
-    communityFeedHasMore = false;
+    state.communityFeedHasMore = false;
   } finally {
-    communityLoaded = true;
+    state.communityLoaded = true;
     setCommunityUiState('content');
     updateCommunityFeedMoreButton();
   }
 }
 
+function formatBytesForCleaner(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value / 1024;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(size >= 100 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatCleanerTimestamp(timestamp) {
+  const date = new Date(Number(timestamp) || Date.now());
+  return date.toLocaleString();
+}
+
+function renderCleanerReport(report) {
+  const totalSpaceEl = document.getElementById('cleaner-total-space');
+  const totalFilesEl = document.getElementById('cleaner-total-files');
+  const updatedAtEl = document.getElementById('cleaner-updated-at');
+  const listEl = document.getElementById('cleaner-target-list');
+  if (!totalSpaceEl || !totalFilesEl || !updatedAtEl || !listEl) return;
+
+  const items = Array.isArray(report?.items) ? report.items : [];
+  totalSpaceEl.textContent = formatBytesForCleaner(report?.totalBytes || 0);
+  totalFilesEl.textContent = `${Number(report?.totalFiles || 0).toLocaleString()} files`;
+  updatedAtEl.textContent = report?.scannedAt
+    ? `Updated ${formatCleanerTimestamp(report.scannedAt)}`
+    : 'Not scanned yet';
+
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="cleaner-empty">No cleanup targets available.</div>';
+    return;
+  }
+
+  listEl.innerHTML = items.map((item) => `
+    <article class="cleaner-target-item">
+      <label class="cleaner-target-control">
+        <input type="checkbox" class="cleaner-target-check" value="${escapeHtml(item.key)}" checked />
+        <div class="cleaner-target-body">
+          <div class="cleaner-target-title">${escapeHtml(item.label || item.key)}</div>
+          <div class="cleaner-target-meta">
+            ${Number(item.files || 0).toLocaleString()} files • ${formatBytesForCleaner(item.bytes || 0)} • ${Number(item.pathCount || 0)} location(s)
+          </div>
+          <div class="cleaner-target-desc">${escapeHtml(item.description || '')}</div>
+        </div>
+      </label>
+    </article>
+  `).join('');
+}
+
+function setCleanerBusy(isBusy) {
+  const analyzeBtn = document.getElementById('btn-cleaner-analyze');
+  const runBtn = document.getElementById('btn-cleaner-run');
+  if (analyzeBtn) {
+    analyzeBtn.disabled = isBusy;
+    const label = analyzeBtn.querySelector('.cleaner-action-label');
+    if (label) label.textContent = isBusy ? 'Working...' : 'Analyze';
+  }
+  if (runBtn) {
+    runBtn.disabled = isBusy;
+    const label = runBtn.querySelector('.cleaner-action-label');
+    if (label) label.textContent = isBusy ? 'Cleaning...' : 'Clean Selected';
+  }
+}
+
+async function refreshCleanerReport({ force = false } = {}) {
+  if (cleanerState.loading) return;
+  if (cleanerState.loaded && !force) return;
+
+  cleanerState.loading = true;
+  setCleanerBusy(true);
+  try {
+    const result = await window.api.getCleanupStats?.();
+    if (!result?.success) {
+      throw new Error(resolveErrorText(result?.error || 'ERR_CLEANUP_FAIL'));
+    }
+    cleanerState.report = result.report || { scannedAt: Date.now(), totalBytes: 0, totalFiles: 0, items: [] };
+    cleanerState.loaded = true;
+    renderCleanerReport(cleanerState.report);
+  } catch (error) {
+    showToast(error?.message || 'ERR_CLEANUP_FAIL', 'error');
+  } finally {
+    cleanerState.loading = false;
+    setCleanerBusy(false);
+  }
+}
+
+async function runCleanerNow() {
+  const checks = Array.from(document.querySelectorAll('.cleaner-target-check:checked'));
+  const targetKeys = checks.map((item) => item.value).filter(Boolean);
+  if (targetKeys.length === 0) {
+    showToast('Select at least one cleanup target', 'error');
+    return;
+  }
+
+  cleanerState.loading = true;
+  setCleanerBusy(true);
+  try {
+    const result = await window.api.runCleanup?.({ targets: targetKeys });
+    if (!result?.success) {
+      throw new Error(resolveErrorText(result?.error || 'ERR_CLEANUP_FAIL'));
+    }
+
+    cleanerState.report = result.report || cleanerState.report;
+    cleanerState.loaded = true;
+    if (cleanerState.report) renderCleanerReport(cleanerState.report);
+
+    const cleanedCount = Array.isArray(result.cleanedTargets) ? result.cleanedTargets.length : 0;
+    const selectedCount = Array.isArray(result.selectedTargets) ? result.selectedTargets.length : targetKeys.length;
+    const summary = cleanedCount > 0
+      ? `Cleaned ${cleanedCount} target(s): ${formatBytesForCleaner(result.freedBytes || 0)} freed`
+      : 'No removable files found (some files may be in use)';
+    const resultCard = document.getElementById('cleaner-result-card');
+    const resultText = document.getElementById('cleaner-result-text');
+    if (resultCard) resultCard.hidden = false;
+    if (resultText) {
+      resultText.textContent = `${summary}. Selected ${Number(selectedCount || 0)} target(s), removed ${Number(result.removedFiles || 0).toLocaleString()} files.`;
+    }
+    showToast(summary, cleanedCount > 0 ? 'success' : 'error');
+  } catch (error) {
+    showToast(error?.message || 'ERR_CLEANUP_FAIL', 'error');
+  } finally {
+    cleanerState.loading = false;
+    setCleanerBusy(false);
+  }
+}
+
+function setupCleaner() {
+  const analyzeBtn = document.getElementById('btn-cleaner-analyze');
+  const runBtn = document.getElementById('btn-cleaner-run');
+  const listEl = document.getElementById('cleaner-target-list');
+
+  if (listEl) {
+    listEl.innerHTML = '<div class="cleaner-empty">Run Analyze to scan reclaimable files.</div>';
+  }
+
+  analyzeBtn?.addEventListener('click', () => {
+    cleanerState.loaded = false;
+    void refreshCleanerReport({ force: true });
+  });
+  runBtn?.addEventListener('click', () => {
+    void runCleanerNow();
+  });
+}
+
 async function loadDiscovery(forceRefresh = false) {
-  if (discoveryLoading) return;
-  if (discoveryLoaded && !forceRefresh) {
+  if (state.discoveryLoading) return;
+  if (state.discoveryLoaded && !forceRefresh) {
     setDiscoveryRefreshButtonState(false);
     return;
   }
@@ -776,7 +936,7 @@ async function loadDiscovery(forceRefresh = false) {
     setDiscoveryUiState('loading');
   }
 
-  discoveryLoading = true;
+  state.discoveryLoading = true;
   setDiscoveryRefreshButtonState(true);
 
   try {
@@ -784,60 +944,213 @@ async function loadDiscovery(forceRefresh = false) {
     renderGameCards(data);
     setDiscoveryUiState('content');
     setDiscoveryOfflineMessage('');
-    discoveryLoaded = true;
+    state.discoveryLoaded = true;
   } catch (err) {
     const msg = resolveErrorText(err?.message || err || 'ERR_RAWG_API_FAIL', true);
     setDiscoveryOfflineMessage(msg);
     setDiscoveryUiState('offline');
   } finally {
-    discoveryLoading = false;
+    state.discoveryLoading = false;
     setDiscoveryRefreshButtonState(false);
   }
 }
 
-function setupTitleBar() {
-  document.getElementById('btn-hide').onclick = () => window.api.hideWindow();
-  document.getElementById('btn-close').onclick = () => window.api.closeWindow();
-}
 
 function setupSearch() {
   document.getElementById('search-input').addEventListener('input', (e) => {
-    searchQuery = e.target.value.toLowerCase();
+    state.searchQuery = e.target.value.toLowerCase();
     renderGames();
   });
 }
 
-function setupCategories() {
-  document.querySelectorAll('.cat-btn[data-cat]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.cat-btn[data-cat]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      activeCategory = btn.dataset.cat;
-      renderGames();
-    });
+function syncGameCategorySelect(preferredCategory = '') {
+  const select = document.getElementById('game-category');
+  if (!select) return;
+
+  const categories = Array.isArray(state.appData.categories) ? [...state.appData.categories] : [];
+  if (!categories.includes('Other')) categories.push('Other');
+
+  const normalizedPreferred = String(preferredCategory || '').trim();
+  if (normalizedPreferred && !categories.includes(normalizedPreferred)) {
+    categories.push(normalizedPreferred);
+  }
+
+  const previous = normalizedPreferred || select.value;
+  select.textContent = '';
+  categories.forEach((category) => {
+    const option = document.createElement('option');
+    option.value = category;
+    option.textContent = category;
+    select.appendChild(option);
   });
+
+  const fallback = categories.includes('FPS')
+    ? 'FPS'
+    : (categories.includes('Other') ? 'Other' : categories[0]);
+  select.value = categories.includes(previous) ? previous : fallback;
+}
+
+function requestCategoryNameDialog(initialValue = '') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = `
+      <div class="modal" style="width:min(420px,100%);">
+        <div class="modal-header">
+          <h2>Add Category</h2>
+          <button class="modal-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-field">
+            <label for="new-category-name">Category Name</label>
+            <input id="new-category-name" type="text" maxlength="32" placeholder="e.g. Adventure" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn-secondary js-category-cancel">Cancel</button>
+            <button type="button" class="btn-primary js-category-save">Add</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeBtn = overlay.querySelector('.modal-close');
+    const cancelBtn = overlay.querySelector('.js-category-cancel');
+    const saveBtn = overlay.querySelector('.js-category-save');
+    const input = overlay.querySelector('#new-category-name');
+
+    const cleanup = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const close = (value = null) => {
+      cleanup();
+      resolve(value);
+    };
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(null);
+      }
+      if (event.key === 'Enter' && document.activeElement === input) {
+        event.preventDefault();
+        close(input.value);
+      }
+    };
+
+    closeBtn?.addEventListener('click', () => close(null));
+    cancelBtn?.addEventListener('click', () => close(null));
+    saveBtn?.addEventListener('click', () => close(input.value));
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close(null);
+    });
+
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild(overlay);
+    input.value = String(initialValue || '');
+    input.focus();
+    input.select();
+  });
+}
+
+function setupCategories() {
+  const addBtn = document.getElementById('btn-add-category');
+  if (addBtn) {
+    addBtn.onclick = async () => {
+      const input = await requestCategoryNameDialog();
+      if (!input) return;
+
+      const normalized = String(input).trim().replace(/\s+/g, ' ').slice(0, 32);
+      if (!normalized || normalized.toLowerCase() === 'all') {
+        showToast('Invalid category name', 'error');
+        return;
+      }
+
+      const existing = Array.isArray(state.appData.categories)
+        && state.appData.categories.some((category) => category.toLowerCase() === normalized.toLowerCase());
+      if (existing) {
+        showToast('Category already exists', 'error');
+        return;
+      }
+
+      let added = false;
+      const result = await state.addCategory(normalized);
+      if (result?.success && result?.added === false) {
+        showToast('Category already exists', 'error');
+        return;
+      }
+
+      if (result?.success && result?.added === true) {
+        added = true;
+      } else if (!result?.success) {
+        // Fallback: use renderer save path to recover from transient helper-save failures.
+        const previous = [...(state.appData.categories || [])];
+        state.appData.categories = [...previous, normalized];
+        const saved = await save();
+        if (!saved) {
+          state.appData.categories = previous;
+          showToast(result?.error || 'Could not add category', 'error');
+          return;
+        }
+        added = true;
+      }
+
+      if (window.api?.getData) {
+        try {
+          state.appData = await window.api.getData();
+        } catch {
+          // keep local state when refresh fails
+        }
+      }
+
+      const existsAfterSync = Array.isArray(state.appData.categories)
+        && state.appData.categories.some((category) => category.toLowerCase() === normalized.toLowerCase());
+      if (!existsAfterSync) {
+        showToast('Category could not be added', 'error');
+        return;
+      }
+
+      if (!added) {
+        showToast('Category could not be added', 'error');
+        return;
+      }
+
+      renderCategories();
+      syncGameCategorySelect(normalized);
+      renderGames();
+      showToast('Category added', 'success');
+    };
+  }
+  syncGameCategorySelect();
 }
 
 function toggleGameSelection(id) {
   const gameId = Number(id);
   if (!Number.isFinite(gameId)) return;
-  if (selectedGameIds.has(gameId)) selectedGameIds.delete(gameId);
-  else selectedGameIds.add(gameId);
+  if (state.selectedGameIds.has(gameId)) state.selectedGameIds.delete(gameId);
+  else state.selectedGameIds.add(gameId);
   renderGames();
-  if (selectedGameIds.size > 0) showDeleteBar();
+  if (state.selectedGameIds.size > 0) showDeleteBar();
   else hideDeleteBar();
 }
 
 function deselectGame(id = null) {
   if (id === null || id === undefined) {
-    selectedGameIds = new Set();
+    state.selectedGameIds = new Set();
   } else {
     const gameId = Number(id);
     if (!Number.isFinite(gameId)) return;
-    selectedGameIds.delete(gameId);
+    state.selectedGameIds.delete(gameId);
   }
   renderGames();
-  if (selectedGameIds.size === 0) hideDeleteBar();
+  if (state.selectedGameIds.size === 0) hideDeleteBar();
   else showDeleteBar();
 }
 
@@ -854,10 +1167,10 @@ function showDeleteBar() {
 
     removeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const ids = [...selectedGameIds];
+      const ids = [...state.selectedGameIds];
       if (ids.length === 0) return;
 
-      const selectedGames = appData.games.filter((g) => selectedGameIds.has(g.id));
+      const selectedGames = state.appData.games.filter((g) => state.selectedGameIds.has(g.id));
       const prompt = selectedGames.length === 1
         ? `Remove "${selectedGames[0].name}" from GameDock?`
         : `Remove ${selectedGames.length} games from GameDock?`;
@@ -901,7 +1214,7 @@ function showDeleteBar() {
 
   bindDeleteBarHandlers(bar);
 
-  const selectedGames = appData.games.filter((g) => selectedGameIds.has(g.id));
+  const selectedGames = state.appData.games.filter((g) => state.selectedGameIds.has(g.id));
   const title = selectedGames.length === 1
     ? selectedGames[0].name
     : `${selectedGames.length} games selected`;
@@ -915,18 +1228,102 @@ function hideDeleteBar() {
 }
 
 function setupSortMode() {
-  const select = document.getElementById('sort-mode');
-  if (!select) return;
-  const validModes = ['lastPlayed', 'playtime', 'name', 'favoritesOnly'];
-  if (!validModes.includes(sortMode)) {
-    sortMode = 'lastPlayed';
-    localStorage.setItem('gamedock.sort.mode', sortMode);
+  const trigger = document.getElementById('sort-trigger');
+  const menu = document.getElementById('sort-menu');
+  const label = document.getElementById('sort-label');
+  if (!trigger || !menu || !label) return;
+
+  const options = Array.from(menu.querySelectorAll('.sort-option[data-sort]'));
+  if (options.length === 0) return;
+
+  const validModes = new Set(options.map((option) => option.dataset.sort));
+  if (!validModes.has(state.sortMode)) {
+    state.sortMode = 'lastPlayed';
   }
-  select.value = sortMode;
-  select.addEventListener('change', () => {
-    sortMode = select.value;
-    localStorage.setItem('gamedock.sort.mode', sortMode);
+
+  const syncSortUi = () => {
+    let activeOption = null;
+    options.forEach((option) => {
+      const isActive = option.dataset.sort === state.sortMode;
+      option.classList.toggle('active', isActive);
+      option.setAttribute('aria-selected', String(isActive));
+      if (isActive) activeOption = option;
+    });
+    const nextLabel = activeOption?.textContent?.trim() || 'Last Played';
+    label.textContent = nextLabel;
+    trigger.title = `Sort: ${nextLabel}`;
+    trigger.setAttribute('aria-label', `Sort games: ${nextLabel}`);
+  };
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const openMenu = () => {
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    const activeOption = options.find((option) => option.dataset.sort === state.sortMode);
+    activeOption?.focus();
+  };
+
+  syncSortUi();
+  closeMenu();
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  });
+
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    if (menu.hidden) openMenu();
+  });
+
+  options.forEach((option) => {
+    option.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextMode = option.dataset.sort;
+      if (!validModes.has(nextMode)) return;
+      state.sortMode = nextMode;
+      syncSortUi();
+      closeMenu();
+      trigger.focus();
+      renderGames();
+    });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (menu.hidden) return;
+    if (event.target.closest('#sidebar-sort')) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !menu.hidden) {
+      closeMenu();
+      trigger.focus();
+      return;
+    }
+
+    if (menu.hidden) return;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    const activeIndex = options.findIndex((option) => option.dataset.sort === state.sortMode);
+    if (activeIndex < 0) return;
+
+    event.preventDefault();
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    const nextIndex = (activeIndex + delta + options.length) % options.length;
+    const nextOption = options[nextIndex];
+    if (!nextOption) return;
+
+    state.sortMode = nextOption.dataset.sort;
+    syncSortUi();
     renderGames();
+    nextOption.focus();
   });
 }
 
@@ -950,7 +1347,7 @@ function resolveErrorText(errorLike, includeTroubleshooting = false) {
   if (!errorLike) return 'Unknown error';
 
   if (typeof errorLike === 'string') {
-    const known = errorMap[errorLike];
+    const known = state.errorMap[errorLike];
     if (!known) return errorLike;
     if (includeTroubleshooting && known.troubleshooting) {
       return `${known.message} ${known.troubleshooting}`;
@@ -959,7 +1356,7 @@ function resolveErrorText(errorLike, includeTroubleshooting = false) {
   }
 
   if (typeof errorLike === 'object') {
-    const known = errorLike.code ? errorMap[errorLike.code] : null;
+    const known = errorLike.code ? state.errorMap[errorLike.code] : null;
     const baseMessage = known?.message || errorLike.message || errorLike.code || 'Unknown error';
     const troubleshooting = known?.troubleshooting || errorLike.troubleshooting;
     if (includeTroubleshooting && troubleshooting) {
@@ -981,8 +1378,8 @@ function setupGameContextMenu() {
       if (!btn) return;
 
       const action = btn.dataset.action;
-      const gameId = Number(contextMenuGameId);
-      const game = appData.games.find((g) => g.id === gameId);
+      const gameId = Number(state.contextMenuGameId);
+      const game = state.appData.games.find((g) => g.id === gameId);
       hideGameContextMenu();
       if (!game) return;
 
@@ -999,7 +1396,7 @@ function setupGameContextMenu() {
           showToast(result?.error || 'ERR_IMAGE_INVALID', 'error');
           return;
         }
-        appData = await window.api.getData();
+        state.appData = await window.api.getData();
         renderGames();
         showToast('Custom cover updated', 'success');
         return;
@@ -1013,7 +1410,7 @@ function setupGameContextMenu() {
           showToast(result?.error || 'ERR_IMAGE_DOWNLOAD_FAIL', 'error');
           return;
         }
-        appData = await window.api.getData();
+        state.appData = await window.api.getData();
         renderGames();
         showToast('Custom cover updated', 'success');
         return;
@@ -1025,7 +1422,7 @@ function setupGameContextMenu() {
           showToast(result?.error || 'ERR_UNKNOWN', 'error');
           return;
         }
-        appData = await window.api.getData();
+        state.appData = await window.api.getData();
         renderGames();
         showToast('Cover reset', 'success');
         return;
@@ -1044,7 +1441,7 @@ function setupGameContextMenu() {
 function showGameContextMenu(gameId, x, y) {
   const menu = document.getElementById('game-context-menu');
   if (!menu) return;
-  contextMenuGameId = gameId;
+  state.contextMenuGameId = gameId;
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
   menu.style.display = 'grid';
@@ -1054,251 +1451,40 @@ function hideGameContextMenu() {
   const menu = document.getElementById('game-context-menu');
   if (!menu) return;
   menu.style.display = 'none';
-  contextMenuGameId = null;
+  state.contextMenuGameId = null;
 }
 
 function gameSort(a, b) {
   const favoriteDelta = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
   if (favoriteDelta !== 0) return favoriteDelta;
 
-  if (sortMode === 'manual') {
+  if (state.sortMode === 'manual') {
     const ao = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : Number.MAX_SAFE_INTEGER;
     const bo = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : Number.MAX_SAFE_INTEGER;
     if (ao !== bo) return ao - bo;
     return (a.addedAt || 0) - (b.addedAt || 0);
   }
 
-  if (sortMode === 'name') {
+  if (state.sortMode === 'name') {
     return String(a.name || '').localeCompare(String(b.name || ''));
   }
 
-  if (sortMode === 'playtime') {
+  if (state.sortMode === 'playtime') {
     return getPlaytimeMinutes(b) - getPlaytimeMinutes(a);
   }
 
   return (b.lastPlayed || 0) - (a.lastPlayed || 0);
 }
 
-function createGameCard(game) {
-  const card = document.createElement('div');
-  const selectionModeActive = selectedGameIds.size > 0;
-  const isSelected = selectedGameIds.has(game.id);
-  const simplifiedCardsEnabled = Boolean(appData.settings?.simplifiedLibraryCards);
-  card.className = ['game-card', simplifiedCardsEnabled ? 'is-simplified' : '', game.favorite ? 'favorite' : '', isSelected ? 'selected' : '']
-    .filter(Boolean)
-    .join(' ');
-  card.id = `game-${game.id}`;
-  card.dataset.gameId = String(game.id);
-
-  const cover = document.createElement('div');
-  cover.className = 'game-cover';
-
-  const coverSource = game.coverPath ? toFileUrl(game.coverPath) : game.icon;
-  if (coverSource) {
-    const img = document.createElement('img');
-    img.src = coverSource;
-    img.alt = game.name;
-    img.onerror = () => {
-      cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
-    };
-    cover.appendChild(img);
-  } else {
-    cover.innerHTML = '<span class="game-cover-placeholder material-symbols-outlined">sports_esports</span>';
-  }
-
-  const playOverlay = document.createElement('div');
-  playOverlay.className = 'play-overlay';
-  const playBtn = document.createElement('button');
-  playBtn.className = 'play-button';
-  playBtn.type = 'button';
-  playBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span>';
-  playBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (selectionModeActive) {
-      toggleGameSelection(game.id);
-      return;
-    }
-    launchGame(game);
-  });
-  playOverlay.appendChild(playBtn);
-  cover.appendChild(playOverlay);
-
-  const info = document.createElement('div');
-  info.className = 'game-info';
-
-  const name = document.createElement('div');
-  name.className = 'game-name';
-  name.textContent = game.name;
-
-  const meta = document.createElement('div');
-  meta.className = 'game-meta';
-
-  const badge = document.createElement('span');
-  badge.className = 'game-badge';
-  badge.innerHTML = `<span class="material-symbols-outlined">label</span>${game.category}`;
-
-  const playtime = document.createElement('span');
-  playtime.className = 'game-playtime';
-  const total = getPlaytimeMinutes(game);
-  if (simplifiedCardsEnabled) {
-    playtime.textContent = game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Last: never';
-  } else {
-    playtime.textContent = total > 0
-      ? formatPlaytime(total)
-      : (game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played');
-  }
-
-  meta.append(badge, playtime);
-  info.append(name, meta);
-
-  const actions = document.createElement('div');
-  actions.className = 'game-actions';
-
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.className = 'game-action-btn';
-  editBtn.title = 'Edit';
-  editBtn.setAttribute('aria-label', 'Edit');
-  editBtn.innerHTML = '<span class="material-symbols-outlined">edit</span>';
-  editBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    openEditModal(game.id);
-  });
-  actions.appendChild(editBtn);
-
-  const favBtn = document.createElement('button');
-  favBtn.type = 'button';
-  favBtn.className = `game-action-btn ${game.favorite ? 'is-active' : ''}`;
-  favBtn.title = game.favorite ? 'Unfavorite' : 'Favorite';
-  favBtn.setAttribute('aria-label', favBtn.title);
-  favBtn.innerHTML = game.favorite 
-    ? '<span class="material-symbols-outlined">star</span>'
-    : '<span class="material-symbols-outlined">star_outline</span>';
-  favBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    const result = await window.api.toggleFavorite(game.id);
-    if (!result.success) {
-      showToast(result.error || 'ERR_UNKNOWN', 'error');
-      return;
-    }
-    appData = await window.api.getData();
-    renderGames();
-  });
-  actions.appendChild(favBtn);
-
-  const selectBtn = document.createElement('button');
-  selectBtn.type = 'button';
-  selectBtn.className = `game-action-btn ${isSelected ? 'is-active' : ''}`;
-  selectBtn.title = isSelected ? 'Unselect' : 'Select';
-  selectBtn.setAttribute('aria-label', selectBtn.title);
-  selectBtn.innerHTML = isSelected
-    ? '<span class="material-symbols-outlined">check_circle</span>'
-    : '<span class="material-symbols-outlined">radio_button_unchecked</span>';
-  selectBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    toggleGameSelection(game.id);
-  });
-  actions.appendChild(selectBtn);
-
-  const delBtn = document.createElement('button');
-  delBtn.type = 'button';
-  delBtn.className = 'game-action-btn';
-  delBtn.title = 'Delete';
-  delBtn.setAttribute('aria-label', 'Delete');
-  delBtn.innerHTML = '<span class="material-symbols-outlined">delete</span>';
-  delBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!confirm(`Remove "${game.name}" from GameDock?`)) return;
-    await deleteGame(game.id);
-    deselectGame(game.id);
-  });
-  actions.appendChild(delBtn);
-
-  card.append(cover, info, actions);
-
-  card.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (e.target.closest('.drag-handle')) return;
-    if (selectionModeActive) toggleGameSelection(game.id);
-    else launchGame(game);
-  });
-
-  card.addEventListener('contextmenu', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    showGameContextMenu(game.id, e.clientX, e.clientY);
-  });
-
-  return card;
-}
-
-function renderGames() {
-  const list = document.getElementById('game-list');
-  list.classList.toggle('simplified-cards', Boolean(appData.settings?.simplifiedLibraryCards));
-  list.textContent = '';
-
-  let games = [...appData.games];
-  if (activeCategory !== 'all') games = games.filter((g) => g.category === activeCategory);
-  if (searchQuery) games = games.filter((g) => g.name.toLowerCase().includes(searchQuery));
-  if (sortMode === 'favoritesOnly') games = games.filter((g) => Boolean(g.favorite));
-  games.sort(gameSort);
-
-  if (games.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty-state';
-    const icon = document.createElement('span');
-    icon.className = 'empty-state-icon material-symbols-outlined';
-    icon.textContent = 'sports_esports';
-    const title = document.createElement('div');
-    title.className = 'empty-state-title';
-    title.textContent = 'No Games';
-    const text = document.createElement('p');
-    text.className = 'empty-state-text';
-    if (searchQuery) {
-      text.textContent = 'No games match your search';
-    } else if (sortMode === 'favoritesOnly') {
-      text.textContent = 'No favorite games yet. Star a game to pin it here.';
-    } else if (activeCategory !== 'all') {
-      text.textContent = `No ${activeCategory} games yet.`;
-    } else {
-      text.textContent = 'No games yet. Add one below.';
-    }
-    empty.append(icon, title, text);
-
-    if (!searchQuery && sortMode !== 'favoritesOnly') {
-      const addBtn = document.createElement('button');
-      addBtn.type = 'button';
-      addBtn.className = 'btn-primary empty-state-action';
-      const addLabel = activeCategory !== 'all' ? `Add ${activeCategory} Game` : 'Add Game';
-      addBtn.innerHTML = `<span class="material-symbols-outlined">add</span><span>${escapeHtml(addLabel)}</span>`;
-      addBtn.addEventListener('click', () => {
-        document.getElementById('btn-add-game')?.click();
-        if (activeCategory !== 'all') {
-          const categorySelect = document.getElementById('game-category');
-          if (categorySelect) categorySelect.value = activeCategory;
-        }
-      });
-      empty.appendChild(addBtn);
-    }
-
-    list.appendChild(empty);
-    return;
-  }
-
-  games.forEach((game) => {
-    const card = createGameCard(game);
-    list.appendChild(card);
-  });
-}
 
 async function launchGame(game) {
-  if (selectedGameIds.size > 0) return;
+  if (state.selectedGameIds.size > 0) return;
   try {
     showToast(`Launching ${game.name}...`, 'success');
     const result = await window.api.launchGame(game);
 
     if (result.success) {
-      appData = await window.api.getData();
+      state.appData = await window.api.getData();
       renderGames();
     } else {
       showToast(result.error || 'ERR_UNKNOWN', 'error');
@@ -1316,20 +1502,20 @@ async function deleteGames(ids) {
   const uniqueIds = new Set((ids || []).map(Number).filter(Number.isFinite));
   if (uniqueIds.size === 0) return;
 
-  const before = appData.games.length;
-  appData.games = appData.games.filter((g) => !uniqueIds.has(g.id));
-  const removedCount = before - appData.games.length;
+  const before = state.appData.games.length;
+  state.appData.games = state.appData.games.filter((g) => !uniqueIds.has(g.id));
+  const removedCount = before - state.appData.games.length;
   if (removedCount <= 0) return;
 
-  if (sortMode === 'manual') {
-    appData.games
+  if (state.sortMode === 'manual') {
+    state.appData.games
       .sort((a, b) => gameSort(a, b))
       .forEach((game, idx) => {
         game.sortOrder = idx;
       });
   }
 
-  uniqueIds.forEach((id) => selectedGameIds.delete(id));
+  uniqueIds.forEach((id) => state.selectedGameIds.delete(id));
   await save();
   renderGames();
   showToast(removedCount === 1 ? 'Game removed' : `${removedCount} games removed`, 'success');
@@ -1344,12 +1530,12 @@ async function addDetectedSteamGames() {
       return;
     }
 
-    steamDetectCandidates = (result.games || []).map((game) => ({
+    state.steamDetectCandidates = (result.games || []).map((game) => ({
       ...game,
       selected: true,
     }));
 
-    if (steamDetectCandidates.length === 0) {
+    if (state.steamDetectCandidates.length === 0) {
       showToast('No new Steam games found', 'error');
       return;
     }
@@ -1373,17 +1559,17 @@ function setupSteamImportWizard() {
   });
 
   document.getElementById('steam-select-all')?.addEventListener('click', () => {
-    steamDetectCandidates.forEach((g) => { g.selected = true; });
+    state.steamDetectCandidates.forEach((g) => { g.selected = true; });
     renderSteamImportList();
   });
 
   document.getElementById('steam-select-none')?.addEventListener('click', () => {
-    steamDetectCandidates.forEach((g) => { g.selected = false; });
+    state.steamDetectCandidates.forEach((g) => { g.selected = false; });
     renderSteamImportList();
   });
 
   document.getElementById('steam-import-confirm')?.addEventListener('click', async () => {
-    const selected = steamDetectCandidates.filter((g) => g.selected);
+    const selected = state.steamDetectCandidates.filter((g) => g.selected);
     if (selected.length === 0) {
       showToast('Select at least one game to import', 'error');
       return;
@@ -1395,7 +1581,10 @@ function setupSteamImportWizard() {
       return;
     }
 
-    appData = await window.api.getData();
+    state.appData = await window.api.getData();
+    if (state.sortMode === 'favoritesOnly') {
+      state.sortMode = 'lastPlayed';
+    }
     renderGames();
     closeSteamImportWizard();
     showToast(`Imported ${res.added || 0} game(s), skipped ${res.skipped || 0}`, 'success');
@@ -1412,56 +1601,8 @@ function closeSteamImportWizard() {
   if (overlay) overlay.style.display = 'none';
 }
 
-function renderSteamImportList() {
-  const list = document.getElementById('steam-import-list');
-  const summary = document.getElementById('steam-import-summary');
-  if (!list) return;
-
-  list.textContent = '';
-  const frag = document.createDocumentFragment();
-
-  steamDetectCandidates.forEach((game, index) => {
-    const row = document.createElement('label');
-    row.className = 'steam-import-item';
-
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = Boolean(game.selected);
-    checkbox.addEventListener('change', () => {
-      steamDetectCandidates[index].selected = checkbox.checked;
-      renderSteamImportList();
-    });
-
-    const thumb = document.createElement('img');
-    thumb.src = game.coverUrl || '';
-    thumb.alt = game.name || 'Cover';
-    thumb.onerror = () => {
-      thumb.src = '';
-    };
-
-    const info = document.createElement('div');
-    const title = document.createElement('div');
-    title.className = 'steam-import-title';
-    title.textContent = game.name || 'Unknown game';
-
-    const meta = document.createElement('div');
-    meta.className = 'steam-import-meta';
-    meta.textContent = `${game.path || ''}${game.steamAppId ? ` | AppID ${game.steamAppId}` : ''}`;
-
-    info.append(title, meta);
-    row.append(checkbox, thumb, info);
-    frag.appendChild(row);
-  });
-
-  list.appendChild(frag);
-  if (summary) {
-    const selectedCount = steamDetectCandidates.filter((g) => g.selected).length;
-    summary.textContent = `${selectedCount} of ${steamDetectCandidates.length} selected`;
-  }
-}
-
 function openEditModal(gameId) {
-  const game = appData.games.find((g) => g.id === Number(gameId));
+  const game = state.appData.games.find((g) => g.id === Number(gameId));
   if (!game) {
     showToast('ERR_GAME_NOT_FOUND', 'error');
     return;
@@ -1484,7 +1625,7 @@ function openEditModal(gameId) {
 
   document.getElementById('game-name').value = game.name || '';
   document.getElementById('game-path').value = game.path || '';
-  document.getElementById('game-category').value = game.category || 'Other';
+  syncGameCategorySelect(game.category || 'Other');
   document.getElementById('game-args').value = game.launchArgs || '';
   document.getElementById('game-working-dir').value = game.workingDir || '';
 
@@ -1537,7 +1678,7 @@ function setupAddGame() {
     }
     document.getElementById('game-name').value = '';
     document.getElementById('game-path').value = '';
-    document.getElementById('game-category').value = 'FPS';
+    syncGameCategorySelect('FPS');
     document.getElementById('game-args').value = '';
     document.getElementById('game-working-dir').value = '';
     setAdvancedVisible(false);
@@ -1605,7 +1746,7 @@ function setupAddGame() {
         showToast(result?.error || 'ERR_UNKNOWN', 'error');
         return;
       }
-      appData = await window.api.getData();
+      state.appData = await window.api.getData();
       renderGames();
       closeModal();
       showSaveActionPopup(`${name} updated`, 'success');
@@ -1614,8 +1755,8 @@ function setupAddGame() {
 
     showToast('Fetching icon...', 'success');
     const icon = await window.api.getGameIcon(gamePath);
-    const maxId = appData.games.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0);
-    const maxSort = appData.games.reduce((max, g) => Math.max(max, Number(g.sortOrder) || 0), -1);
+    const maxId = state.appData.games.reduce((max, g) => Math.max(max, Number(g.id) || 0), 0);
+    const maxSort = state.appData.games.reduce((max, g) => Math.max(max, Number(g.sortOrder) || 0), -1);
 
     const game = {
       id: maxId + 1,
@@ -1639,7 +1780,7 @@ function setupAddGame() {
       steamAppId: null,
     };
 
-    appData.games.push(game);
+    state.appData.games.push(game);
     await save();
     renderGames();
     closeModal();
@@ -1654,13 +1795,15 @@ function setupAddGame() {
 }
 
 function setupSettings() {
-  appData.settings = appData.settings || {};
-  const s = appData.settings;
+  state.appData.settings = state.appData.settings || {};
+  const s = state.appData.settings;
   const alwaysOnTopEl = document.getElementById('set-always-on-top');
   const autoStartEl = document.getElementById('set-auto-start');
   const minimizeTrayEl = document.getElementById('set-minimize-tray');
   const launchNotificationsEl = document.getElementById('set-launch-notifications');
   const simplifiedCardsEl = document.getElementById('set-simplified-cards');
+  const themeModeEl = document.getElementById('set-theme-mode');
+  const accentColorEl = document.getElementById('set-accent-color');
   const appVersionEl = document.getElementById('set-app-version');
 
   if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(s.alwaysOnTop);
@@ -1668,6 +1811,24 @@ function setupSettings() {
   if (minimizeTrayEl) minimizeTrayEl.checked = s.minimizeToTray !== false;
   if (launchNotificationsEl) launchNotificationsEl.checked = s.launchNotifications !== false;
   if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(s.simplifiedLibraryCards);
+  const normalizedThemeMode = applyThemeMode(s.themeMode);
+  if (themeModeEl) themeModeEl.value = normalizedThemeMode;
+  if (themeModeEl) {
+    themeModeEl.addEventListener('change', () => {
+      const nextThemeMode = applyThemeMode(themeModeEl.value);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.themeMode = nextThemeMode;
+    });
+  }
+  const normalizedAccentColor = applyAccentColor(s.accentColor);
+  if (accentColorEl) accentColorEl.value = normalizedAccentColor;
+  if (accentColorEl) {
+    accentColorEl.addEventListener('input', () => {
+      const nextAccentColor = applyAccentColor(accentColorEl.value);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.accentColor = nextAccentColor;
+    });
+  }
 
   window.api.getAppInfo()
     .then((info) => {
@@ -1684,13 +1845,21 @@ function setupSettings() {
     const minimizeTray = document.getElementById('set-minimize-tray').checked;
     const launchNotifications = document.getElementById('set-launch-notifications').checked;
     const simplifiedCards = document.getElementById('set-simplified-cards').checked;
+    const themeMode = applyThemeMode(document.getElementById('set-theme-mode').value);
+    const accentColor = applyAccentColor(document.getElementById('set-accent-color').value);
 
-    appData.settings = appData.settings || {};
-    appData.settings.alwaysOnTop = alwaysOnTop;
-    appData.settings.autoStart = autoStart;
-    appData.settings.minimizeToTray = minimizeTray;
-    appData.settings.launchNotifications = launchNotifications;
-    appData.settings.simplifiedLibraryCards = simplifiedCards;
+    state.appData.settings = state.appData.settings || {};
+    state.appData.settings.alwaysOnTop = alwaysOnTop;
+    state.appData.settings.autoStart = autoStart;
+    state.appData.settings.minimizeToTray = minimizeTray;
+    state.appData.settings.launchNotifications = launchNotifications;
+    state.appData.settings.simplifiedLibraryCards = simplifiedCards;
+    state.appData.settings.themeMode = themeMode;
+    state.appData.settings.accentColor = accentColor;
+    state.appData.settings.boosterEnabled = false;
+    state.appData.settings.boosterTargets = [];
+    state.appData.settings.boosterForceKill = false;
+    state.appData.settings.boosterRestoreOnExit = true;
 
     try {
       if (saveBtn) saveBtn.disabled = true;
@@ -1726,12 +1895,21 @@ function setupSettings() {
   document.getElementById('btn-import-backup').onclick = async () => {
     const res = await window.api.importData();
     if (res.success) {
-      appData = res.data || (await window.api.getData());
-      if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(appData.settings?.alwaysOnTop);
-      if (autoStartEl) autoStartEl.checked = Boolean(appData.settings?.autoStart);
-      if (minimizeTrayEl) minimizeTrayEl.checked = appData.settings?.minimizeToTray !== false;
-      if (launchNotificationsEl) launchNotificationsEl.checked = appData.settings?.launchNotifications !== false;
-      if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(appData.settings?.simplifiedLibraryCards);
+      state.appData = res.data || (await window.api.getData());
+      if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(state.appData.settings?.alwaysOnTop);
+      if (autoStartEl) autoStartEl.checked = Boolean(state.appData.settings?.autoStart);
+      if (minimizeTrayEl) minimizeTrayEl.checked = state.appData.settings?.minimizeToTray !== false;
+      if (launchNotificationsEl) launchNotificationsEl.checked = state.appData.settings?.launchNotifications !== false;
+      if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(state.appData.settings?.simplifiedLibraryCards);
+      const importedThemeMode = applyThemeMode(state.appData.settings?.themeMode);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.themeMode = importedThemeMode;
+      if (themeModeEl) themeModeEl.value = importedThemeMode;
+      const importedAccentColor = applyAccentColor(state.appData.settings?.accentColor);
+      state.appData.settings.accentColor = importedAccentColor;
+      if (accentColorEl) accentColorEl.value = importedAccentColor;
+      renderCategories();
+      syncGameCategorySelect();
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
@@ -1742,84 +1920,13 @@ function setupSettings() {
 
 async function save() {
   try {
-    return Boolean(await window.api.saveData(appData));
+    return Boolean(await window.api.saveData(state.appData));
   } catch (error) {
     console.error('Save failed:', error);
     return false;
   }
 }
 
-const TOAST_DURATION_MS = 3200;
-let toastTimeout;
-function showToast(message, type = 'success') {
-  let toast = document.querySelector('.toast');
-  if (!toast) {
-    toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = '<span class="toast-message"></span><span class="toast-progress" aria-hidden="true"></span>';
-    document.body.appendChild(toast);
-  }
-
-  let messageEl = toast.querySelector('.toast-message');
-  let progressEl = toast.querySelector('.toast-progress');
-  if (!messageEl || !progressEl) {
-    toast.innerHTML = '<span class="toast-message"></span><span class="toast-progress" aria-hidden="true"></span>';
-    messageEl = toast.querySelector('.toast-message');
-    progressEl = toast.querySelector('.toast-progress');
-  }
-
-  messageEl.textContent = resolveErrorText(message, type === 'error');
-  toast.className = `toast ${type}`;
-  toast.style.setProperty('--toast-duration', `${TOAST_DURATION_MS}ms`);
-
-  // Restart enter + countdown animation on repeated toasts.
-  if (progressEl) progressEl.style.animation = 'none';
-  void toast.offsetWidth;
-  if (progressEl) progressEl.style.animation = '';
-  toast.classList.add('show');
-
-  clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
-}
-
-const SAVE_POPUP_DURATION_MS = 2600;
-let savePopupTimeout;
-function showSaveActionPopup(message, type = 'success') {
-  let popup = document.querySelector('.save-action-popup');
-  if (!popup) {
-    popup = document.createElement('div');
-    popup.className = 'save-action-popup';
-    popup.innerHTML = '<span class="save-action-message"></span><span class="save-action-progress" aria-hidden="true"></span>';
-    document.body.appendChild(popup);
-  }
-
-  const messageEl = popup.querySelector('.save-action-message');
-  const progressEl = popup.querySelector('.save-action-progress');
-  if (messageEl) messageEl.textContent = resolveErrorText(message, type === 'error');
-  popup.className = `save-action-popup ${type}`;
-  popup.style.setProperty('--save-popup-duration', `${SAVE_POPUP_DURATION_MS}ms`);
-
-  if (progressEl) progressEl.style.animation = 'none';
-  void popup.offsetWidth;
-  if (progressEl) progressEl.style.animation = '';
-  popup.classList.add('show');
-
-  clearTimeout(savePopupTimeout);
-  savePopupTimeout = setTimeout(() => popup.classList.remove('show'), SAVE_POPUP_DURATION_MS);
-}
-
-function timeAgo(timestamp) {
-  if (!timestamp) return 'Never';
-  const diff = Date.now() - timestamp;
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
-}
 
 function installGlobalErrorHandlers() {
   window.addEventListener('error', (event) => {
@@ -1832,10 +1939,23 @@ function installGlobalErrorHandlers() {
   });
 }
 
+configureUI({
+  onToggleGameSelection: toggleGameSelection,
+  onLaunchGame: launchGame,
+  onOpenEditModal: openEditModal,
+  onDeleteGame: deleteGame,
+  onShowGameContextMenu: showGameContextMenu,
+  onCategoriesChanged: () => {
+    syncGameCategorySelect();
+  },
+  resolveErrorText,
+});
+
 installGlobalErrorHandlers();
 void init().catch((error) => {
   console.error('Renderer initialization failed:', error);
   showToast(error?.message || 'ERR_UNKNOWN', 'error');
 });
+
 
 

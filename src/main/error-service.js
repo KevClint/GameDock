@@ -44,6 +44,11 @@ const ERROR_MAP = {
     troubleshooting: 'Verify the JSON file is valid and was created by GameDock.',
     retryable: true,
   },
+  ERR_CLEANUP_FAIL: {
+    message: 'Cleanup could not be completed.',
+    troubleshooting: 'Close other apps using GameDock cache files and try again.',
+    retryable: true,
+  },
   ERR_RAWG_API_FAIL: {
     message: 'Discovery service is unavailable.',
     troubleshooting: 'Verify RAWG_API_KEY in .env and check network connectivity.',

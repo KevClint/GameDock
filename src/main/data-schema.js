@@ -2,18 +2,29 @@ const path = require('path');
 
 const DEFAULT_DATA = {
   games: [],
+  categories: ['FPS', 'MOBA', 'RPG', 'Other'],
   settings: {
     autoStart: false,
     minimizeToTray: true,
     alwaysOnTop: false,
     launchNotifications: true,
     simplifiedLibraryCards: false,
+    accentColor: '#8b5cf6',
+    themeMode: 'dark',
+    boosterEnabled: false,
+    boosterTargets: [],
+    boosterForceKill: false,
+    boosterRestoreOnExit: true,
     opacity: 95,
     activeSessions: {},
   },
 };
 
-const VALID_CATEGORIES = new Set(['FPS', 'MOBA', 'RPG', 'RTS', 'Other']);
+const DEFAULT_CATEGORIES = [...DEFAULT_DATA.categories];
+const DEFAULT_ACCENT_COLOR = '#8b5cf6';
+const DEFAULT_THEME_MODE = 'dark';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const VALID_THEME_MODES = new Set(['dark', 'light']);
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -37,6 +48,38 @@ function sanitizeOptionalString(value, max = 400) {
   return str.slice(0, max);
 }
 
+function sanitizeAccentColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_ACCENT_COLOR;
+}
+
+function sanitizeThemeMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_THEME_MODES.has(mode) ? mode : DEFAULT_THEME_MODE;
+}
+
+function sanitizeCategories(rawCategories) {
+  const source = Array.isArray(rawCategories) ? rawCategories : DEFAULT_CATEGORIES;
+  const normalized = [];
+  const seen = new Set();
+
+  source.forEach((item) => {
+    const value = String(item || '').trim().replace(/\s+/g, ' ').slice(0, 32);
+    if (!value) return;
+    if (value.toLowerCase() === 'all') return;
+    if (value.toLowerCase() === 'rts') return;
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push(value);
+  });
+
+  if (!normalized.some((value) => value.toLowerCase() === 'other')) {
+    normalized.push('Other');
+  }
+  return normalized.length > 0 ? normalized : [...DEFAULT_CATEGORIES];
+}
+
 function normalizePath(rawPath) {
   return path.normalize(String(rawPath || '').trim());
 }
@@ -53,9 +96,12 @@ function isValidExecutablePath(rawPath, { allowNetworkPaths = false } = {}) {
   return true;
 }
 
-function sanitizeGame(rawGame) {
+function sanitizeGame(rawGame, allowedCategories = DEFAULT_CATEGORIES) {
   const game = asObject(rawGame);
-  const category = VALID_CATEGORIES.has(game.category) ? game.category : 'Other';
+  const categories = sanitizeCategories(allowedCategories);
+  const categorySet = new Set(categories.map((value) => value.toLowerCase()));
+  const rawCategory = String(game.category || '').trim();
+  const category = categorySet.has(rawCategory.toLowerCase()) ? rawCategory : 'Other';
   const launchArgs = String(game.launchArgs || '').trim().slice(0, 300);
   const workingDir = String(game.workingDir || '').trim();
   const favorite = Boolean(game.favorite);
@@ -127,6 +173,12 @@ function sanitizeSettings(rawSettings) {
     alwaysOnTop: Boolean(settings.alwaysOnTop),
     launchNotifications: settings.launchNotifications !== false,
     simplifiedLibraryCards: Boolean(settings.simplifiedLibraryCards),
+    accentColor: sanitizeAccentColor(settings.accentColor),
+    themeMode: sanitizeThemeMode(settings.themeMode),
+    boosterEnabled: false,
+    boosterTargets: [],
+    boosterForceKill: false,
+    boosterRestoreOnExit: true,
     opacity: clampNumber(settings.opacity, 95, 30, 100),
     activeSessions,
   };
@@ -134,7 +186,8 @@ function sanitizeSettings(rawSettings) {
 
 function sanitizeData(rawData) {
   const data = asObject(rawData);
-  const games = Array.isArray(data.games) ? data.games.map(sanitizeGame) : [];
+  const categories = sanitizeCategories(data.categories);
+  const games = Array.isArray(data.games) ? data.games.map((game) => sanitizeGame(game, categories)) : [];
   const uniqueGames = [];
   const seenIds = new Set();
 
@@ -147,6 +200,7 @@ function sanitizeData(rawData) {
 
   return {
     games: uniqueGames,
+    categories,
     settings: sanitizeSettings(data.settings),
   };
 }
