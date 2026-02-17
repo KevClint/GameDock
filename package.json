@@ -1,6 +1,6 @@
 {
   "name": "gamedock",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "description": "Minimalist widget-style game launcher",
   "author": "kevclint",
   "main": "src/main/main.js",
@@ -23,7 +23,9 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },

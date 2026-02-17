@@ -2,13 +2,16 @@ import {
   getAppData,
   setAppData,
   getActiveCategory,
+  setActiveCategory,
   getSearchQuery,
   getSelectedGameIds,
   getSortMode,
+  setSortMode,
   getCommunityFeedHasMore,
   getCommunityFeedLoadingMore,
   getSteamDetectCandidates,
   setSteamDetectCandidates,
+  removeCategory,
 } from './state.js';
 
 let uiHandlers = {
@@ -17,6 +20,7 @@ let uiHandlers = {
   onOpenEditModal: () => {},
   onDeleteGame: async () => {},
   onShowGameContextMenu: () => {},
+  onCategoriesChanged: () => {},
   resolveErrorText: (value) => String(value || 'Unknown error'),
 };
 
@@ -240,7 +244,20 @@ function renderEmptyState(list, { activeCategory, searchQuery, sortMode }) {
 
   empty.append(icon, title, text);
 
-  if (!searchQuery && sortMode !== 'favoritesOnly') {
+  if (sortMode === 'favoritesOnly') {
+    const showAllBtn = document.createElement('button');
+    showAllBtn.type = 'button';
+    showAllBtn.className = 'btn-secondary empty-state-action';
+    showAllBtn.innerHTML = '<span class="material-symbols-outlined">filter_alt_off</span><span>Show All Games</span>';
+    showAllBtn.addEventListener('click', () => {
+      setSortMode('lastPlayed');
+      renderGames();
+    });
+    empty.appendChild(showAllBtn);
+    return;
+  }
+
+  if (!searchQuery) {
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.className = 'btn-primary empty-state-action';
@@ -425,6 +442,89 @@ export function setupTitleBar() {
   document.getElementById('btn-close').onclick = () => window.api.closeWindow();
 }
 
+export function renderCategories() {
+  const list = document.getElementById('category-list');
+  const addBtn = document.getElementById('btn-add-category');
+  if (!list) return;
+
+  const appData = getAppData();
+  const categories = Array.isArray(appData.categories) ? appData.categories : [];
+  const activeCategory = getActiveCategory();
+
+  const hasActive = activeCategory === 'all'
+    || categories.some((category) => category === activeCategory);
+  if (!hasActive) setActiveCategory('all');
+
+  const currentActive = getActiveCategory();
+  if (addBtn?.parentElement === list) addBtn.remove();
+
+  list.textContent = '';
+  const frag = document.createDocumentFragment();
+
+  const allBtn = document.createElement('button');
+  allBtn.type = 'button';
+  allBtn.className = 'cat-btn';
+  allBtn.dataset.cat = 'all';
+  allBtn.textContent = 'All Games';
+  allBtn.title = 'All Games';
+  allBtn.classList.toggle('active', currentActive === 'all');
+  allBtn.addEventListener('click', () => {
+    setActiveCategory('all');
+    renderCategories();
+    renderGames();
+  });
+  frag.appendChild(allBtn);
+
+  categories.forEach((category) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cat-btn';
+    btn.dataset.cat = category;
+    btn.textContent = category;
+    btn.title = category;
+    btn.classList.toggle('active', currentActive === category);
+
+    btn.addEventListener('click', () => {
+      setActiveCategory(category);
+      renderCategories();
+      renderGames();
+    });
+
+    btn.addEventListener('contextmenu', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const confirmed = confirm(`Delete category "${category}"? Games in it will move to Other.`);
+      if (!confirmed) return;
+
+      const result = await removeCategory(category);
+      if (!result?.success) {
+        showToast(result?.error || 'Could not remove category', 'error');
+        return;
+      }
+      try {
+        if (window.api?.getData) {
+          setAppData(await window.api.getData());
+        }
+      } catch {
+        // Keep local state if sync refresh fails.
+      }
+      uiHandlers.onCategoriesChanged();
+      renderCategories();
+      renderGames();
+    });
+
+    frag.appendChild(btn);
+  });
+  list.appendChild(frag);
+
+  if (addBtn) {
+    addBtn.classList.add('cat-btn');
+    addBtn.type = 'button';
+    addBtn.title = 'Add Category';
+    list.appendChild(addBtn);
+  }
+}
+
 export function createGameCard(game) {
   const selectedGameIds = getSelectedGameIds();
   const appData = getAppData();
@@ -523,12 +623,20 @@ export function createGameCard(game) {
     : '<span class="material-symbols-outlined">star_outline</span>';
   favBtn.addEventListener('click', async (event) => {
     event.stopPropagation();
+    const wasFavoritesOnly = getSortMode() === 'favoritesOnly';
     const result = await window.api.toggleFavorite(game.id);
     if (!result?.success) {
       showToast(result?.error || 'ERR_UNKNOWN', 'error');
       return;
     }
     setAppData(await window.api.getData());
+    if (wasFavoritesOnly) {
+      const hasAnyFavorite = getAppData().games.some((entry) => isFavoriteGame(entry));
+      if (!hasAnyFavorite) {
+        setSortMode('lastPlayed');
+        showToast('No favorites left. Showing all games.', 'success');
+      }
+    }
     renderGames();
   });
   actions.appendChild(favBtn);

@@ -1,5 +1,6 @@
 import {
   getAppData,
+  addCategory,
   setAppData,
   getActiveCategory,
   setActiveCategory,
@@ -33,6 +34,7 @@ import {
 } from './state.js';
 import {
   configureUI,
+  renderCategories,
   renderGames,
   setupTitleBar,
   showToast,
@@ -74,6 +76,7 @@ const state = {
   set communityFeedHasMore(value) { setCommunityFeedHasMore(value); },
   get communityFeedLoadingMore() { return getCommunityFeedLoadingMore(); },
   set communityFeedLoadingMore(value) { setCommunityFeedLoadingMore(value); },
+  async addCategory(name) { return addCategory(name); },
 };
 
 const CARD_LAUNCH_GUARD_MS = 300;
@@ -81,6 +84,11 @@ const DISCOVERY_CACHE_KEY = 'gamedock.discovery.cache.v1';
 const DISCOVERY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const COMMUNITY_PAGE_SIZE = 12; 
+const cleanerState = {
+  loaded: false,
+  loading: false,
+  report: null,
+};
 
 const MOCK_COMMUNITY_ARTICLES = [
   {
@@ -124,10 +132,12 @@ async function init() {
   setupTitleBar();
   setupSearch();
   setupCategories();
+  renderCategories();
   setupSortMode();
   setupNavigation();
   setupDiscovery();
   setupCommunityFeed();
+  setupCleaner();
   setupGameContextMenu();
   setupSteamImportWizard();
   setActiveView('library');
@@ -191,6 +201,7 @@ function setActiveView(viewName) {
     library: 'view-library',
     discover: 'view-discovery',
     community: 'view-community',
+    cleaner: 'view-cleaner',
     settings: 'view-settings',
   };
 
@@ -198,6 +209,7 @@ function setActiveView(viewName) {
     library: 'Library',
     discover: 'Discovery',
     community: 'Community',
+    cleaner: 'Cleaner',
     settings: 'Settings',
   };
 
@@ -221,10 +233,13 @@ function setActiveView(viewName) {
 
   const mainView = document.querySelector('.main-view');
   if (mainView) mainView.classList.toggle('compact-view', viewName !== 'library');
+  const sidebarSort = document.getElementById('sidebar-sort');
+  if (sidebarSort) sidebarSort.hidden = viewName !== 'library';
 
   if (viewName !== 'library') hideDeleteBar();
   if (viewName === 'discover') void loadDiscovery(false);
   if (viewName === 'community') void loadCommunityNews(false);
+  if (viewName === 'cleaner') void refreshCleanerReport({ force: false });
 }
 
 function escapeHtml(value) {
@@ -716,6 +731,154 @@ async function loadCommunityNews(force = false) {
   }
 }
 
+function formatBytesForCleaner(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value / 1024;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(size >= 100 ? 0 : 1)} ${units[index]}`;
+}
+
+function formatCleanerTimestamp(timestamp) {
+  const date = new Date(Number(timestamp) || Date.now());
+  return date.toLocaleString();
+}
+
+function renderCleanerReport(report) {
+  const totalSpaceEl = document.getElementById('cleaner-total-space');
+  const totalFilesEl = document.getElementById('cleaner-total-files');
+  const updatedAtEl = document.getElementById('cleaner-updated-at');
+  const listEl = document.getElementById('cleaner-target-list');
+  if (!totalSpaceEl || !totalFilesEl || !updatedAtEl || !listEl) return;
+
+  const items = Array.isArray(report?.items) ? report.items : [];
+  totalSpaceEl.textContent = formatBytesForCleaner(report?.totalBytes || 0);
+  totalFilesEl.textContent = `${Number(report?.totalFiles || 0).toLocaleString()} files`;
+  updatedAtEl.textContent = report?.scannedAt
+    ? `Updated ${formatCleanerTimestamp(report.scannedAt)}`
+    : 'Not scanned yet';
+
+  if (items.length === 0) {
+    listEl.innerHTML = '<div class="cleaner-empty">No cleanup targets available.</div>';
+    return;
+  }
+
+  listEl.innerHTML = items.map((item) => `
+    <article class="cleaner-target-item">
+      <label class="cleaner-target-control">
+        <input type="checkbox" class="cleaner-target-check" value="${escapeHtml(item.key)}" checked />
+        <div class="cleaner-target-body">
+          <div class="cleaner-target-title">${escapeHtml(item.label || item.key)}</div>
+          <div class="cleaner-target-meta">
+            ${Number(item.files || 0).toLocaleString()} files • ${formatBytesForCleaner(item.bytes || 0)} • ${Number(item.pathCount || 0)} location(s)
+          </div>
+          <div class="cleaner-target-desc">${escapeHtml(item.description || '')}</div>
+        </div>
+      </label>
+    </article>
+  `).join('');
+}
+
+function setCleanerBusy(isBusy) {
+  const analyzeBtn = document.getElementById('btn-cleaner-analyze');
+  const runBtn = document.getElementById('btn-cleaner-run');
+  if (analyzeBtn) {
+    analyzeBtn.disabled = isBusy;
+    const label = analyzeBtn.querySelector('.cleaner-action-label');
+    if (label) label.textContent = isBusy ? 'Working...' : 'Analyze';
+  }
+  if (runBtn) {
+    runBtn.disabled = isBusy;
+    const label = runBtn.querySelector('.cleaner-action-label');
+    if (label) label.textContent = isBusy ? 'Cleaning...' : 'Clean Selected';
+  }
+}
+
+async function refreshCleanerReport({ force = false } = {}) {
+  if (cleanerState.loading) return;
+  if (cleanerState.loaded && !force) return;
+
+  cleanerState.loading = true;
+  setCleanerBusy(true);
+  try {
+    const result = await window.api.getCleanupStats?.();
+    if (!result?.success) {
+      throw new Error(resolveErrorText(result?.error || 'ERR_CLEANUP_FAIL'));
+    }
+    cleanerState.report = result.report || { scannedAt: Date.now(), totalBytes: 0, totalFiles: 0, items: [] };
+    cleanerState.loaded = true;
+    renderCleanerReport(cleanerState.report);
+  } catch (error) {
+    showToast(error?.message || 'ERR_CLEANUP_FAIL', 'error');
+  } finally {
+    cleanerState.loading = false;
+    setCleanerBusy(false);
+  }
+}
+
+async function runCleanerNow() {
+  const checks = Array.from(document.querySelectorAll('.cleaner-target-check:checked'));
+  const targetKeys = checks.map((item) => item.value).filter(Boolean);
+  if (targetKeys.length === 0) {
+    showToast('Select at least one cleanup target', 'error');
+    return;
+  }
+
+  cleanerState.loading = true;
+  setCleanerBusy(true);
+  try {
+    const result = await window.api.runCleanup?.({ targets: targetKeys });
+    if (!result?.success) {
+      throw new Error(resolveErrorText(result?.error || 'ERR_CLEANUP_FAIL'));
+    }
+
+    cleanerState.report = result.report || cleanerState.report;
+    cleanerState.loaded = true;
+    if (cleanerState.report) renderCleanerReport(cleanerState.report);
+
+    const cleanedCount = Array.isArray(result.cleanedTargets) ? result.cleanedTargets.length : 0;
+    const selectedCount = Array.isArray(result.selectedTargets) ? result.selectedTargets.length : targetKeys.length;
+    const summary = cleanedCount > 0
+      ? `Cleaned ${cleanedCount} target(s): ${formatBytesForCleaner(result.freedBytes || 0)} freed`
+      : 'No removable files found (some files may be in use)';
+    const resultCard = document.getElementById('cleaner-result-card');
+    const resultText = document.getElementById('cleaner-result-text');
+    if (resultCard) resultCard.hidden = false;
+    if (resultText) {
+      resultText.textContent = `${summary}. Selected ${Number(selectedCount || 0)} target(s), removed ${Number(result.removedFiles || 0).toLocaleString()} files.`;
+    }
+    showToast(summary, cleanedCount > 0 ? 'success' : 'error');
+  } catch (error) {
+    showToast(error?.message || 'ERR_CLEANUP_FAIL', 'error');
+  } finally {
+    cleanerState.loading = false;
+    setCleanerBusy(false);
+  }
+}
+
+function setupCleaner() {
+  const analyzeBtn = document.getElementById('btn-cleaner-analyze');
+  const runBtn = document.getElementById('btn-cleaner-run');
+  const listEl = document.getElementById('cleaner-target-list');
+
+  if (listEl) {
+    listEl.innerHTML = '<div class="cleaner-empty">Run Analyze to scan reclaimable files.</div>';
+  }
+
+  analyzeBtn?.addEventListener('click', () => {
+    cleanerState.loaded = false;
+    void refreshCleanerReport({ force: true });
+  });
+  runBtn?.addEventListener('click', () => {
+    void runCleanerNow();
+  });
+}
+
 async function loadDiscovery(forceRefresh = false) {
   if (state.discoveryLoading) return;
   if (state.discoveryLoaded && !forceRefresh) {
@@ -760,15 +923,172 @@ function setupSearch() {
   });
 }
 
-function setupCategories() {
-  document.querySelectorAll('.cat-btn[data-cat]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.cat-btn[data-cat]').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.activeCategory = btn.dataset.cat;
-      renderGames();
-    });
+function syncGameCategorySelect(preferredCategory = '') {
+  const select = document.getElementById('game-category');
+  if (!select) return;
+
+  const categories = Array.isArray(state.appData.categories) ? [...state.appData.categories] : [];
+  if (!categories.includes('Other')) categories.push('Other');
+
+  const normalizedPreferred = String(preferredCategory || '').trim();
+  if (normalizedPreferred && !categories.includes(normalizedPreferred)) {
+    categories.push(normalizedPreferred);
+  }
+
+  const previous = normalizedPreferred || select.value;
+  select.textContent = '';
+  categories.forEach((category) => {
+    const option = document.createElement('option');
+    option.value = category;
+    option.textContent = category;
+    select.appendChild(option);
   });
+
+  const fallback = categories.includes('FPS')
+    ? 'FPS'
+    : (categories.includes('Other') ? 'Other' : categories[0]);
+  select.value = categories.includes(previous) ? previous : fallback;
+}
+
+function requestCategoryNameDialog(initialValue = '') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.innerHTML = `
+      <div class="modal" style="width:min(420px,100%);">
+        <div class="modal-header">
+          <h2>Add Category</h2>
+          <button class="modal-close" type="button" aria-label="Close">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-field">
+            <label for="new-category-name">Category Name</label>
+            <input id="new-category-name" type="text" maxlength="32" placeholder="e.g. Adventure" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <div class="modal-actions">
+            <button type="button" class="btn-secondary js-category-cancel">Cancel</button>
+            <button type="button" class="btn-primary js-category-save">Add</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeBtn = overlay.querySelector('.modal-close');
+    const cancelBtn = overlay.querySelector('.js-category-cancel');
+    const saveBtn = overlay.querySelector('.js-category-save');
+    const input = overlay.querySelector('#new-category-name');
+
+    const cleanup = () => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const close = (value = null) => {
+      cleanup();
+      resolve(value);
+    };
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(null);
+      }
+      if (event.key === 'Enter' && document.activeElement === input) {
+        event.preventDefault();
+        close(input.value);
+      }
+    };
+
+    closeBtn?.addEventListener('click', () => close(null));
+    cancelBtn?.addEventListener('click', () => close(null));
+    saveBtn?.addEventListener('click', () => close(input.value));
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) close(null);
+    });
+
+    document.addEventListener('keydown', onKeyDown);
+    document.body.appendChild(overlay);
+    input.value = String(initialValue || '');
+    input.focus();
+    input.select();
+  });
+}
+
+function setupCategories() {
+  const addBtn = document.getElementById('btn-add-category');
+  if (addBtn) {
+    addBtn.onclick = async () => {
+      const input = await requestCategoryNameDialog();
+      if (!input) return;
+
+      const normalized = String(input).trim().replace(/\s+/g, ' ').slice(0, 32);
+      if (!normalized || normalized.toLowerCase() === 'all') {
+        showToast('Invalid category name', 'error');
+        return;
+      }
+
+      const existing = Array.isArray(state.appData.categories)
+        && state.appData.categories.some((category) => category.toLowerCase() === normalized.toLowerCase());
+      if (existing) {
+        showToast('Category already exists', 'error');
+        return;
+      }
+
+      let added = false;
+      const result = await state.addCategory(normalized);
+      if (result?.success && result?.added === false) {
+        showToast('Category already exists', 'error');
+        return;
+      }
+
+      if (result?.success && result?.added === true) {
+        added = true;
+      } else if (!result?.success) {
+        // Fallback: use renderer save path to recover from transient helper-save failures.
+        const previous = [...(state.appData.categories || [])];
+        state.appData.categories = [...previous, normalized];
+        const saved = await save();
+        if (!saved) {
+          state.appData.categories = previous;
+          showToast(result?.error || 'Could not add category', 'error');
+          return;
+        }
+        added = true;
+      }
+
+      if (window.api?.getData) {
+        try {
+          state.appData = await window.api.getData();
+        } catch {
+          // keep local state when refresh fails
+        }
+      }
+
+      const existsAfterSync = Array.isArray(state.appData.categories)
+        && state.appData.categories.some((category) => category.toLowerCase() === normalized.toLowerCase());
+      if (!existsAfterSync) {
+        showToast('Category could not be added', 'error');
+        return;
+      }
+
+      if (!added) {
+        showToast('Category could not be added', 'error');
+        return;
+      }
+
+      renderCategories();
+      syncGameCategorySelect(normalized);
+      renderGames();
+      showToast('Category added', 'success');
+    };
+  }
+  syncGameCategorySelect();
 }
 
 function toggleGameSelection(id) {
@@ -868,16 +1188,102 @@ function hideDeleteBar() {
 }
 
 function setupSortMode() {
-  const select = document.getElementById('sort-mode');
-  if (!select) return;
-  const validModes = ['lastPlayed', 'playtime', 'name', 'favoritesOnly'];
-  if (!validModes.includes(state.sortMode)) {
+  const trigger = document.getElementById('sort-trigger');
+  const menu = document.getElementById('sort-menu');
+  const label = document.getElementById('sort-label');
+  if (!trigger || !menu || !label) return;
+
+  const options = Array.from(menu.querySelectorAll('.sort-option[data-sort]'));
+  if (options.length === 0) return;
+
+  const validModes = new Set(options.map((option) => option.dataset.sort));
+  if (!validModes.has(state.sortMode)) {
     state.sortMode = 'lastPlayed';
   }
-  select.value = state.sortMode;
-  select.addEventListener('change', () => {
-    state.sortMode = select.value;
+
+  const syncSortUi = () => {
+    let activeOption = null;
+    options.forEach((option) => {
+      const isActive = option.dataset.sort === state.sortMode;
+      option.classList.toggle('active', isActive);
+      option.setAttribute('aria-selected', String(isActive));
+      if (isActive) activeOption = option;
+    });
+    const nextLabel = activeOption?.textContent?.trim() || 'Last Played';
+    label.textContent = nextLabel;
+    trigger.title = `Sort: ${nextLabel}`;
+    trigger.setAttribute('aria-label', `Sort games: ${nextLabel}`);
+  };
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+
+  const openMenu = () => {
+    menu.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    const activeOption = options.find((option) => option.dataset.sort === state.sortMode);
+    activeOption?.focus();
+  };
+
+  syncSortUi();
+  closeMenu();
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  });
+
+  trigger.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    if (menu.hidden) openMenu();
+  });
+
+  options.forEach((option) => {
+    option.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nextMode = option.dataset.sort;
+      if (!validModes.has(nextMode)) return;
+      state.sortMode = nextMode;
+      syncSortUi();
+      closeMenu();
+      trigger.focus();
+      renderGames();
+    });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (menu.hidden) return;
+    if (event.target.closest('#sidebar-sort')) return;
+    closeMenu();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !menu.hidden) {
+      closeMenu();
+      trigger.focus();
+      return;
+    }
+
+    if (menu.hidden) return;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+
+    const activeIndex = options.findIndex((option) => option.dataset.sort === state.sortMode);
+    if (activeIndex < 0) return;
+
+    event.preventDefault();
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    const nextIndex = (activeIndex + delta + options.length) % options.length;
+    const nextOption = options[nextIndex];
+    if (!nextOption) return;
+
+    state.sortMode = nextOption.dataset.sort;
+    syncSortUi();
     renderGames();
+    nextOption.focus();
   });
 }
 
@@ -1136,6 +1542,9 @@ function setupSteamImportWizard() {
     }
 
     state.appData = await window.api.getData();
+    if (state.sortMode === 'favoritesOnly') {
+      state.sortMode = 'lastPlayed';
+    }
     renderGames();
     closeSteamImportWizard();
     showToast(`Imported ${res.added || 0} game(s), skipped ${res.skipped || 0}`, 'success');
@@ -1176,7 +1585,7 @@ function openEditModal(gameId) {
 
   document.getElementById('game-name').value = game.name || '';
   document.getElementById('game-path').value = game.path || '';
-  document.getElementById('game-category').value = game.category || 'Other';
+  syncGameCategorySelect(game.category || 'Other');
   document.getElementById('game-args').value = game.launchArgs || '';
   document.getElementById('game-working-dir').value = game.workingDir || '';
 
@@ -1229,7 +1638,7 @@ function setupAddGame() {
     }
     document.getElementById('game-name').value = '';
     document.getElementById('game-path').value = '';
-    document.getElementById('game-category').value = 'FPS';
+    syncGameCategorySelect('FPS');
     document.getElementById('game-args').value = '';
     document.getElementById('game-working-dir').value = '';
     setAdvancedVisible(false);
@@ -1383,6 +1792,10 @@ function setupSettings() {
     state.appData.settings.minimizeToTray = minimizeTray;
     state.appData.settings.launchNotifications = launchNotifications;
     state.appData.settings.simplifiedLibraryCards = simplifiedCards;
+    state.appData.settings.boosterEnabled = false;
+    state.appData.settings.boosterTargets = [];
+    state.appData.settings.boosterForceKill = false;
+    state.appData.settings.boosterRestoreOnExit = true;
 
     try {
       if (saveBtn) saveBtn.disabled = true;
@@ -1424,6 +1837,8 @@ function setupSettings() {
       if (minimizeTrayEl) minimizeTrayEl.checked = state.appData.settings?.minimizeToTray !== false;
       if (launchNotificationsEl) launchNotificationsEl.checked = state.appData.settings?.launchNotifications !== false;
       if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(state.appData.settings?.simplifiedLibraryCards);
+      renderCategories();
+      syncGameCategorySelect();
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
@@ -1459,6 +1874,9 @@ configureUI({
   onOpenEditModal: openEditModal,
   onDeleteGame: deleteGame,
   onShowGameContextMenu: showGameContextMenu,
+  onCategoriesChanged: () => {
+    syncGameCategorySelect();
+  },
   resolveErrorText,
 });
 

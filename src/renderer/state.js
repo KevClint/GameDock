@@ -1,6 +1,7 @@
 const SORT_MODE_STORAGE_KEY = 'gamedock.sort.mode';
 const DEFAULT_SORT_MODE = 'lastPlayed';
 const VALID_SORT_MODES = new Set(['lastPlayed', 'playtime', 'name', 'favoritesOnly', 'manual']);
+const DEFAULT_CATEGORIES = ['FPS', 'MOBA', 'RPG', 'Other'];
 
 function normalizeSortMode(mode) {
   const value = String(mode || '').trim();
@@ -23,7 +24,79 @@ function persistSortMode(mode) {
   }
 }
 
-let appData = { games: [], settings: { autoStart: false, minimizeToTray: true } };
+function normalizeCategoryName(name) {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 32);
+}
+
+function sanitizeCategories(categories) {
+  if (!Array.isArray(categories)) return [...DEFAULT_CATEGORIES];
+
+  const normalized = [];
+  const seen = new Set();
+  categories.forEach((category) => {
+    const name = normalizeCategoryName(category);
+    if (!name) return;
+    if (name.toLowerCase() === 'all') return;
+    if (name.toLowerCase() === 'rts') return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    normalized.push(name);
+  });
+
+  return normalized.length > 0 ? normalized : [...DEFAULT_CATEGORIES];
+}
+
+function ensureAppDataShape(data) {
+  const input = data && typeof data === 'object' ? data : {};
+  const sourceSettings = input.settings && typeof input.settings === 'object' ? input.settings : {};
+  return {
+    ...input,
+    games: Array.isArray(input.games) ? input.games : [],
+    settings: {
+      ...sourceSettings,
+      autoStart: Boolean(sourceSettings.autoStart),
+      minimizeToTray: sourceSettings.minimizeToTray !== false,
+      alwaysOnTop: Boolean(sourceSettings.alwaysOnTop),
+      launchNotifications: sourceSettings.launchNotifications !== false,
+      simplifiedLibraryCards: Boolean(sourceSettings.simplifiedLibraryCards),
+      boosterEnabled: Boolean(sourceSettings.boosterEnabled),
+      boosterTargets: Array.isArray(sourceSettings.boosterTargets) ? sourceSettings.boosterTargets : [],
+      boosterForceKill: Boolean(sourceSettings.boosterForceKill),
+      boosterRestoreOnExit: sourceSettings.boosterRestoreOnExit !== false,
+    },
+    categories: sanitizeCategories(input.categories),
+  };
+}
+
+async function persistAppData() {
+  try {
+    if (window?.api?.saveData) {
+      return Boolean(await window.api.saveData(appData));
+    }
+    return true;
+  } catch (error) {
+    console.error('Failed to persist app data:', error);
+    return false;
+  }
+}
+
+let appData = ensureAppDataShape({
+  games: [],
+  settings: {
+    autoStart: false,
+    minimizeToTray: true,
+    launchNotifications: true,
+    simplifiedLibraryCards: false,
+    boosterEnabled: false,
+    boosterTargets: [],
+    boosterForceKill: false,
+    boosterRestoreOnExit: true,
+  },
+});
 let activeCategory = 'all';
 let searchQuery = '';
 let selectedGameIds = new Set();
@@ -42,7 +115,7 @@ let communityFeedLoadingMore = false;
 
 export function getAppData() { return appData; }
 export function setAppData(data) {
-  appData = data || { games: [], settings: { autoStart: false, minimizeToTray: true } };
+  appData = ensureAppDataShape(data);
 }
 
 export function getActiveCategory() { return activeCategory; }
@@ -105,3 +178,64 @@ export function setCommunityFeedHasMore(hasMore) { communityFeedHasMore = Boolea
 
 export function getCommunityFeedLoadingMore() { return communityFeedLoadingMore; }
 export function setCommunityFeedLoadingMore(loading) { communityFeedLoadingMore = Boolean(loading); }
+
+export async function addCategory(name) {
+  const next = normalizeCategoryName(name);
+  if (!next || next.toLowerCase() === 'all') {
+    return { success: false, error: 'Invalid category name' };
+  }
+
+  const exists = appData.categories.some((category) => category.toLowerCase() === next.toLowerCase());
+  if (exists) {
+    return { success: true, added: false };
+  }
+
+  const prevCategories = [...appData.categories];
+  appData.categories = [...appData.categories, next];
+  const saved = await persistAppData();
+  if (!saved) {
+    appData.categories = prevCategories;
+    return { success: false, added: false, error: 'Failed to save category' };
+  }
+  return { success: true, added: true };
+}
+
+export async function removeCategory(name) {
+  const target = normalizeCategoryName(name);
+  if (!target) {
+    return { success: false, error: 'Invalid category name' };
+  }
+
+  const prevCategories = [...appData.categories];
+  const prevGames = Array.isArray(appData.games) ? appData.games.map((game) => ({ ...game })) : [];
+  const prevActiveCategory = activeCategory;
+
+  const before = appData.categories.length;
+  appData.categories = appData.categories.filter((category) => category.toLowerCase() !== target.toLowerCase());
+  const removed = appData.categories.length !== before;
+  if (!removed) {
+    return { success: true, removed: false };
+  }
+
+  if (activeCategory.toLowerCase() === target.toLowerCase()) {
+    activeCategory = 'all';
+  }
+
+  appData.games = appData.games.map((game) => {
+    if (String(game?.category || '').toLowerCase() !== target.toLowerCase()) return game;
+    return { ...game, category: 'Other' };
+  });
+
+  if (!appData.categories.some((category) => category.toLowerCase() === 'other')) {
+    appData.categories.push('Other');
+  }
+
+  const saved = await persistAppData();
+  if (!saved) {
+    appData.categories = prevCategories;
+    appData.games = prevGames;
+    activeCategory = prevActiveCategory;
+    return { success: false, removed: false, error: 'Failed to save category changes' };
+  }
+  return { success: true, removed: true };
+}
