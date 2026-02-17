@@ -89,6 +89,42 @@ const cleanerState = {
   loading: false,
   report: null,
 };
+const DEFAULT_ACCENT_COLOR = '#8b5cf6';
+const DEFAULT_THEME_MODE = 'dark';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const VALID_THEME_MODES = new Set(['dark', 'light']);
+
+function normalizeAccentColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_ACCENT_COLOR;
+}
+
+function normalizeThemeMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_THEME_MODES.has(mode) ? mode : DEFAULT_THEME_MODE;
+}
+
+function hexToRgbTriplet(hexColor) {
+  const normalized = normalizeAccentColor(hexColor);
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
+function applyAccentColor(value) {
+  const normalized = normalizeAccentColor(value);
+  const root = document.documentElement;
+  root.style.setProperty('--primary-color', normalized);
+  root.style.setProperty('--primary-color-rgb', hexToRgbTriplet(normalized));
+  return normalized;
+}
+
+function applyThemeMode(value) {
+  const normalized = normalizeThemeMode(value);
+  document.body.dataset.theme = normalized;
+  return normalized;
+}
 
 const MOCK_COMMUNITY_ARTICLES = [
   {
@@ -128,6 +164,10 @@ async function init() {
     console.error('Failed to load error map:', error);
     state.errorMap = {};
   }
+
+  state.appData.settings = state.appData.settings || {};
+  state.appData.settings.themeMode = applyThemeMode(state.appData.settings.themeMode);
+  state.appData.settings.accentColor = applyAccentColor(state.appData.settings.accentColor);
 
   setupTitleBar();
   setupSearch();
@@ -1762,6 +1802,8 @@ function setupSettings() {
   const minimizeTrayEl = document.getElementById('set-minimize-tray');
   const launchNotificationsEl = document.getElementById('set-launch-notifications');
   const simplifiedCardsEl = document.getElementById('set-simplified-cards');
+  const themeModeEl = document.getElementById('set-theme-mode');
+  const accentColorEl = document.getElementById('set-accent-color');
   const appVersionEl = document.getElementById('set-app-version');
 
   if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(s.alwaysOnTop);
@@ -1769,6 +1811,24 @@ function setupSettings() {
   if (minimizeTrayEl) minimizeTrayEl.checked = s.minimizeToTray !== false;
   if (launchNotificationsEl) launchNotificationsEl.checked = s.launchNotifications !== false;
   if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(s.simplifiedLibraryCards);
+  const normalizedThemeMode = applyThemeMode(s.themeMode);
+  if (themeModeEl) themeModeEl.value = normalizedThemeMode;
+  if (themeModeEl) {
+    themeModeEl.addEventListener('change', () => {
+      const nextThemeMode = applyThemeMode(themeModeEl.value);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.themeMode = nextThemeMode;
+    });
+  }
+  const normalizedAccentColor = applyAccentColor(s.accentColor);
+  if (accentColorEl) accentColorEl.value = normalizedAccentColor;
+  if (accentColorEl) {
+    accentColorEl.addEventListener('input', () => {
+      const nextAccentColor = applyAccentColor(accentColorEl.value);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.accentColor = nextAccentColor;
+    });
+  }
 
   window.api.getAppInfo()
     .then((info) => {
@@ -1785,6 +1845,8 @@ function setupSettings() {
     const minimizeTray = document.getElementById('set-minimize-tray').checked;
     const launchNotifications = document.getElementById('set-launch-notifications').checked;
     const simplifiedCards = document.getElementById('set-simplified-cards').checked;
+    const themeMode = applyThemeMode(document.getElementById('set-theme-mode').value);
+    const accentColor = applyAccentColor(document.getElementById('set-accent-color').value);
 
     state.appData.settings = state.appData.settings || {};
     state.appData.settings.alwaysOnTop = alwaysOnTop;
@@ -1792,6 +1854,8 @@ function setupSettings() {
     state.appData.settings.minimizeToTray = minimizeTray;
     state.appData.settings.launchNotifications = launchNotifications;
     state.appData.settings.simplifiedLibraryCards = simplifiedCards;
+    state.appData.settings.themeMode = themeMode;
+    state.appData.settings.accentColor = accentColor;
     state.appData.settings.boosterEnabled = false;
     state.appData.settings.boosterTargets = [];
     state.appData.settings.boosterForceKill = false;
@@ -1837,6 +1901,13 @@ function setupSettings() {
       if (minimizeTrayEl) minimizeTrayEl.checked = state.appData.settings?.minimizeToTray !== false;
       if (launchNotificationsEl) launchNotificationsEl.checked = state.appData.settings?.launchNotifications !== false;
       if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(state.appData.settings?.simplifiedLibraryCards);
+      const importedThemeMode = applyThemeMode(state.appData.settings?.themeMode);
+      state.appData.settings = state.appData.settings || {};
+      state.appData.settings.themeMode = importedThemeMode;
+      if (themeModeEl) themeModeEl.value = importedThemeMode;
+      const importedAccentColor = applyAccentColor(state.appData.settings?.accentColor);
+      state.appData.settings.accentColor = importedAccentColor;
+      if (accentColorEl) accentColorEl.value = importedAccentColor;
       renderCategories();
       syncGameCategorySelect();
       renderGames();

@@ -2,6 +2,20 @@ const SORT_MODE_STORAGE_KEY = 'gamedock.sort.mode';
 const DEFAULT_SORT_MODE = 'lastPlayed';
 const VALID_SORT_MODES = new Set(['lastPlayed', 'playtime', 'name', 'favoritesOnly', 'manual']);
 const DEFAULT_CATEGORIES = ['FPS', 'MOBA', 'RPG', 'Other'];
+const DEFAULT_ACCENT_COLOR = '#8b5cf6';
+const DEFAULT_THEME_MODE = 'dark';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const VALID_THEME_MODES = new Set(['dark', 'light']);
+
+function normalizeAccentColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_ACCENT_COLOR;
+}
+
+function normalizeThemeMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_THEME_MODES.has(mode) ? mode : DEFAULT_THEME_MODE;
+}
 
 function normalizeSortMode(mode) {
   const value = String(mode || '').trim();
@@ -63,6 +77,8 @@ function ensureAppDataShape(data) {
       alwaysOnTop: Boolean(sourceSettings.alwaysOnTop),
       launchNotifications: sourceSettings.launchNotifications !== false,
       simplifiedLibraryCards: Boolean(sourceSettings.simplifiedLibraryCards),
+      accentColor: normalizeAccentColor(sourceSettings.accentColor),
+      themeMode: normalizeThemeMode(sourceSettings.themeMode),
       boosterEnabled: Boolean(sourceSettings.boosterEnabled),
       boosterTargets: Array.isArray(sourceSettings.boosterTargets) ? sourceSettings.boosterTargets : [],
       boosterForceKill: Boolean(sourceSettings.boosterForceKill),
@@ -91,6 +107,8 @@ let appData = ensureAppDataShape({
     minimizeToTray: true,
     launchNotifications: true,
     simplifiedLibraryCards: false,
+    accentColor: DEFAULT_ACCENT_COLOR,
+    themeMode: DEFAULT_THEME_MODE,
     boosterEnabled: false,
     boosterTargets: [],
     boosterForceKill: false,

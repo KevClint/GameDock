@@ -9,6 +9,8 @@ const DEFAULT_DATA = {
     alwaysOnTop: false,
     launchNotifications: true,
     simplifiedLibraryCards: false,
+    accentColor: '#8b5cf6',
+    themeMode: 'dark',
     boosterEnabled: false,
     boosterTargets: [],
     boosterForceKill: false,
@@ -19,6 +21,10 @@ const DEFAULT_DATA = {
 };
 
 const DEFAULT_CATEGORIES = [...DEFAULT_DATA.categories];
+const DEFAULT_ACCENT_COLOR = '#8b5cf6';
+const DEFAULT_THEME_MODE = 'dark';
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const VALID_THEME_MODES = new Set(['dark', 'light']);
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
@@ -40,6 +46,16 @@ function sanitizeOptionalString(value, max = 400) {
   const str = value.trim();
   if (!str) return null;
   return str.slice(0, max);
+}
+
+function sanitizeAccentColor(value) {
+  const color = String(value || '').trim().toLowerCase();
+  return HEX_COLOR_PATTERN.test(color) ? color : DEFAULT_ACCENT_COLOR;
+}
+
+function sanitizeThemeMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  return VALID_THEME_MODES.has(mode) ? mode : DEFAULT_THEME_MODE;
 }
 
 function sanitizeCategories(rawCategories) {
@@ -157,6 +173,8 @@ function sanitizeSettings(rawSettings) {
     alwaysOnTop: Boolean(settings.alwaysOnTop),
     launchNotifications: settings.launchNotifications !== false,
     simplifiedLibraryCards: Boolean(settings.simplifiedLibraryCards),
+    accentColor: sanitizeAccentColor(settings.accentColor),
+    themeMode: sanitizeThemeMode(settings.themeMode),
     boosterEnabled: false,
     boosterTargets: [],
     boosterForceKill: false,

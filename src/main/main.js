@@ -49,6 +49,8 @@ let mainWindow;
 let appData = sanitizeData(store.load());
 const runningSessions = new Map();
 let sessionPollTimer = null;
+const DARK_WINDOW_BACKGROUND = '#0f0f0f';
+const LIGHT_WINDOW_BACKGROUND = '#f4f6fb';
 
 function hasActiveWindow() {
   return Boolean(mainWindow && !mainWindow.isDestroyed());
@@ -93,6 +95,11 @@ function saveAppData() {
   appData = safe;
   store.save(safe);
   return safe;
+}
+
+function resolveWindowBackgroundColor(settings) {
+  const mode = String(settings?.themeMode || '').trim().toLowerCase();
+  return mode === 'light' ? LIGHT_WINDOW_BACKGROUND : DARK_WINDOW_BACKGROUND;
 }
 
 function resolveGameById(id) {
@@ -1135,7 +1142,7 @@ function createWindow() {
     alwaysOnTop: Boolean(appData.settings?.alwaysOnTop),
     skipTaskbar: false,
     transparent: false,
-    backgroundColor: '#0f0f0f',
+    backgroundColor: resolveWindowBackgroundColor(appData.settings),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1240,6 +1247,11 @@ ipcMain.handle('save-data', (_, data) => {
   appData = sanitizeData(data);
   appData.settings.activeSessions = previousActiveSessions;
   const saved = store.save(appData);
+  if (saved) {
+    withMainWindow((win) => {
+      win.setBackgroundColor(resolveWindowBackgroundColor(appData.settings));
+    });
+  }
   return saved;
 });
 
@@ -1333,6 +1345,9 @@ ipcMain.handle('import-data', async () => {
     const parsed = JSON.parse(raw);
     appData = sanitizeData(parsed);
     store.save(appData);
+    withMainWindow((win) => {
+      win.setBackgroundColor(resolveWindowBackgroundColor(appData.settings));
+    });
     return { success: true, data: appData };
   } catch (err) {
     return fail('ERR_IMPORT_FAIL', { details: toMessage(err) });
