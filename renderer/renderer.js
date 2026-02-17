@@ -165,7 +165,9 @@ function escapeHtml(value) {
 
 function normalizeDiscoveryGame(game) {
   const genres = Array.isArray(game?.genres)
-    ? game.genres.map((g) => g?.name).filter(Boolean)
+    ? game.genres
+      .map((g) => (typeof g === 'string' ? g : g?.name))
+      .filter(Boolean)
     : [];
 
   return {
