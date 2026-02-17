@@ -32,6 +32,29 @@ let appData = sanitizeData(store.load());
 const runningSessions = new Map();
 let sessionPollTimer = null;
 
+function hasActiveWindow() {
+  return Boolean(mainWindow && !mainWindow.isDestroyed());
+}
+
+function withMainWindow(action) {
+  if (!hasActiveWindow()) return false;
+  try {
+    action(mainWindow);
+    return true;
+  } catch (error) {
+    console.error('Window operation failed:', error);
+    return false;
+  }
+}
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception in main process:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection in main process:', reason);
+});
+
 function getWindowPosition() {
   const { screen } = require('electron');
   const display = screen.getPrimaryDisplay();
@@ -609,7 +632,23 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html')).catch((error) => {
+    console.error('Failed to load renderer UI:', error);
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_, details) => {
+    console.error('Renderer process exited unexpectedly:', details);
+    if (!hasActiveWindow()) return;
+    try {
+      mainWindow.webContents.reloadIgnoringCache();
+    } catch (error) {
+      console.error('Failed to reload renderer after crash:', error);
+    }
+  });
+
+  mainWindow.on('unresponsive', () => {
+    console.error('Main window became unresponsive.');
+  });
 
   mainWindow.on('moved', () => {
     const { x: snapX, y: snapY } = getWindowPosition();
@@ -622,10 +661,14 @@ function createWindow() {
   });
 
   mainWindow.on('close', (e) => {
-    if (!global.forceQuit) {
+    if (!global.forceQuit && appData.settings?.minimizeToTray !== false) {
       e.preventDefault();
-      mainWindow.hide();
+      withMainWindow((win) => win.hide());
     }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
   });
 
   createTray(
@@ -635,13 +678,23 @@ function createWindow() {
   );
 }
 
-app.whenReady().then(() => {
-  if (appData.settings?.autoStart) {
-    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
-  }
-  recoverStaleSessions();
-  createWindow();
-});
+app.whenReady()
+  .then(() => {
+    if (appData.settings?.autoStart) {
+      app.setLoginItemSettings({ openAtLogin: true, path: process.execPath });
+    }
+    recoverStaleSessions();
+    createWindow();
+  })
+  .catch((error) => {
+    console.error('App startup failed:', error);
+    try {
+      dialog.showErrorBox('GameDock startup failed', toMessage(error));
+    } catch {
+      // no-op
+    }
+    app.quit();
+  });
 
 app.on('before-quit', () => {
   global.forceQuit = true;
@@ -656,10 +709,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('second-instance', () => {
-  if (mainWindow) {
-    mainWindow.show();
-    mainWindow.focus();
-  }
+  withMainWindow((win) => {
+    win.show();
+    win.focus();
+  });
 });
 
 ipcMain.handle('get-error-map', () => ERROR_MAP);
@@ -1015,9 +1068,15 @@ ipcMain.handle('toggle-favorite', (_, id) => {
 
 ipcMain.handle('get-game-icon', async (_, gamePath) => getGameIconDataUrl(gamePath));
 
-ipcMain.on('window-hide', () => mainWindow.hide());
+ipcMain.on('window-hide', () => {
+  withMainWindow((win) => win.hide());
+});
 ipcMain.on('window-close', () => {
-  mainWindow.hide();
+  if (appData.settings?.minimizeToTray !== false) {
+    withMainWindow((win) => win.hide());
+    return;
+  }
+  app.quit();
 });
 
 ipcMain.handle('toggle-always-on-top', (_, val) => {

@@ -4,6 +4,21 @@ const fs = require('fs');
 
 let tray = null;
 
+function hasUsableWindow(mainWindow) {
+  return Boolean(mainWindow && !mainWindow.isDestroyed());
+}
+
+function safeShow(mainWindow) {
+  if (!hasUsableWindow(mainWindow)) return;
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function safeHide(mainWindow) {
+  if (!hasUsableWindow(mainWindow)) return;
+  mainWindow.hide();
+}
+
 function buildQuickLaunchItems(getData, launchGameById) {
   const appData = typeof getData === 'function' ? getData() : { games: [] };
   const games = Array.isArray(appData.games) ? appData.games : [];
@@ -27,6 +42,14 @@ function buildQuickLaunchItems(getData, launchGameById) {
 }
 
 function createTray(mainWindow, getData, launchGameById) {
+  if (tray) {
+    try {
+      tray.destroy();
+    } catch {
+      // no-op
+    }
+  }
+
   const appRoot = app.getAppPath();
   const iconCandidates = [
     path.join(appRoot, 'assets', 'tray-icon.png'),
@@ -51,21 +74,22 @@ function createTray(mainWindow, getData, launchGameById) {
     { type: 'separator' },
     {
       label: 'Show GameDock',
-      click: () => {
-        mainWindow.show();
-        mainWindow.focus();
-      }
+      click: () => safeShow(mainWindow),
     },
     {
       label: 'Hide GameDock',
-      click: () => mainWindow.hide()
+      click: () => safeHide(mainWindow),
     },
     { type: 'separator' },
     {
       label: 'Exit',
       click: () => {
         global.forceQuit = true;
-        mainWindow.close();
+        if (hasUsableWindow(mainWindow)) {
+          mainWindow.close();
+        } else {
+          app.quit();
+        }
       }
     }
   ]);
@@ -74,7 +98,8 @@ function createTray(mainWindow, getData, launchGameById) {
 
   // Single click to toggle
   tray.on('click', () => {
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show();
+    if (!hasUsableWindow(mainWindow)) return;
+    mainWindow.isVisible() ? safeHide(mainWindow) : safeShow(mainWindow);
   });
 
   tray.on('right-click', () => {

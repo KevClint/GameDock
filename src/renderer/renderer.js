@@ -46,8 +46,20 @@ const MOCK_COMMUNITY_ARTICLES = [
 ];
 
 async function init() {
-  appData = (await window.api.getData()) || appData;
-  errorMap = (await window.api.getErrorMap?.()) || {};
+  try {
+    appData = (await window.api.getData()) || appData;
+  } catch (error) {
+    console.error('Failed to load app data from main process:', error);
+    appData = appData || { games: [], settings: { autoStart: false, minimizeToTray: true } };
+  }
+
+  try {
+    errorMap = (await window.api.getErrorMap?.()) || {};
+  } catch (error) {
+    console.error('Failed to load error map:', error);
+    errorMap = {};
+  }
+
   setupTitleBar();
   setupSearch();
   setupCategories();
@@ -203,9 +215,13 @@ async function openDiscoveryGameInfo(url) {
   const target = String(url || '').trim();
   if (!target) return;
 
-  const result = await window.api.openExternalUrl?.(target);
-  if (!result?.success) {
-    showToast(result?.error || 'ERR_UNKNOWN', 'error');
+  try {
+    const result = await window.api.openExternalUrl?.(target);
+    if (!result?.success) {
+      showToast(result?.error || 'ERR_UNKNOWN', 'error');
+    }
+  } catch (error) {
+    showToast(error?.message || 'ERR_UNKNOWN', 'error');
   }
 }
 
@@ -960,62 +976,67 @@ function setupGameContextMenu() {
   if (!menu) return;
 
   menu.addEventListener('click', async (event) => {
-    const btn = event.target.closest('button[data-action]');
-    if (!btn) return;
+    try {
+      const btn = event.target.closest('button[data-action]');
+      if (!btn) return;
 
-    const action = btn.dataset.action;
-    const gameId = Number(contextMenuGameId);
-    const game = appData.games.find((g) => g.id === gameId);
-    hideGameContextMenu();
-    if (!game) return;
+      const action = btn.dataset.action;
+      const gameId = Number(contextMenuGameId);
+      const game = appData.games.find((g) => g.id === gameId);
+      hideGameContextMenu();
+      if (!game) return;
 
-    if (action === 'edit') {
-      openEditModal(game.id);
-      return;
-    }
-
-    if (action === 'set-cover-file') {
-      const filePath = await window.api.pickCoverFile?.();
-      if (!filePath) return;
-      const result = await window.api.setCustomCoverFile(game.id, filePath);
-      if (!result?.success) {
-        showToast(result?.error || 'ERR_IMAGE_INVALID', 'error');
+      if (action === 'edit') {
+        openEditModal(game.id);
         return;
       }
-      appData = await window.api.getData();
-      renderGames();
-      showToast('Custom cover updated', 'success');
-      return;
-    }
 
-    if (action === 'set-cover-url') {
-      const url = prompt('Paste image URL:');
-      if (!url) return;
-      const result = await window.api.setCustomCoverUrl(game.id, url.trim());
-      if (!result?.success) {
-        showToast(result?.error || 'ERR_IMAGE_DOWNLOAD_FAIL', 'error');
+      if (action === 'set-cover-file') {
+        const filePath = await window.api.pickCoverFile?.();
+        if (!filePath) return;
+        const result = await window.api.setCustomCoverFile(game.id, filePath);
+        if (!result?.success) {
+          showToast(result?.error || 'ERR_IMAGE_INVALID', 'error');
+          return;
+        }
+        appData = await window.api.getData();
+        renderGames();
+        showToast('Custom cover updated', 'success');
         return;
       }
-      appData = await window.api.getData();
-      renderGames();
-      showToast('Custom cover updated', 'success');
-      return;
-    }
 
-    if (action === 'reset-cover') {
-      const result = await window.api.resetCustomCover(game.id);
-      if (!result?.success) {
-        showToast(result?.error || 'ERR_UNKNOWN', 'error');
+      if (action === 'set-cover-url') {
+        const url = prompt('Paste image URL:');
+        if (!url) return;
+        const result = await window.api.setCustomCoverUrl(game.id, url.trim());
+        if (!result?.success) {
+          showToast(result?.error || 'ERR_IMAGE_DOWNLOAD_FAIL', 'error');
+          return;
+        }
+        appData = await window.api.getData();
+        renderGames();
+        showToast('Custom cover updated', 'success');
         return;
       }
-      appData = await window.api.getData();
-      renderGames();
-      showToast('Cover reset', 'success');
-      return;
-    }
 
-    if (action === 'toggle-select') {
-      toggleGameSelection(game.id);
+      if (action === 'reset-cover') {
+        const result = await window.api.resetCustomCover(game.id);
+        if (!result?.success) {
+          showToast(result?.error || 'ERR_UNKNOWN', 'error');
+          return;
+        }
+        appData = await window.api.getData();
+        renderGames();
+        showToast('Cover reset', 'success');
+        return;
+      }
+
+      if (action === 'toggle-select') {
+        toggleGameSelection(game.id);
+      }
+    } catch (error) {
+      console.error('Context menu action failed:', error);
+      showToast(error?.message || 'ERR_UNKNOWN', 'error');
     }
   });
 }
@@ -1272,14 +1293,18 @@ function renderGames() {
 
 async function launchGame(game) {
   if (selectedGameIds.size > 0) return;
-  showToast(`Launching ${game.name}...`, 'success');
-  const result = await window.api.launchGame(game);
+  try {
+    showToast(`Launching ${game.name}...`, 'success');
+    const result = await window.api.launchGame(game);
 
-  if (result.success) {
-    appData = await window.api.getData();
-    renderGames();
-  } else {
-    showToast(result.error || 'ERR_UNKNOWN', 'error');
+    if (result.success) {
+      appData = await window.api.getData();
+      renderGames();
+    } else {
+      showToast(result.error || 'ERR_UNKNOWN', 'error');
+    }
+  } catch (error) {
+    showToast(error?.message || 'ERR_UNKNOWN', 'error');
   }
 }
 
@@ -1311,25 +1336,29 @@ async function deleteGames(ids) {
 }
 
 async function addDetectedSteamGames() {
-  showToast('Scanning Steam libraries...', 'success');
-  const result = await window.api.detectSteamGames();
-  if (!result.success) {
-    showToast(result.error || 'ERR_STEAM_DETECT_FAIL', 'error');
-    return;
+  try {
+    showToast('Scanning Steam libraries...', 'success');
+    const result = await window.api.detectSteamGames();
+    if (!result.success) {
+      showToast(result.error || 'ERR_STEAM_DETECT_FAIL', 'error');
+      return;
+    }
+
+    steamDetectCandidates = (result.games || []).map((game) => ({
+      ...game,
+      selected: true,
+    }));
+
+    if (steamDetectCandidates.length === 0) {
+      showToast('No new Steam games found', 'error');
+      return;
+    }
+
+    openSteamImportWizard();
+    renderSteamImportList();
+  } catch (error) {
+    showToast(error?.message || 'ERR_STEAM_DETECT_FAIL', 'error');
   }
-
-  steamDetectCandidates = (result.games || []).map((game) => ({
-    ...game,
-    selected: true,
-  }));
-
-  if (steamDetectCandidates.length === 0) {
-    showToast('No new Steam games found', 'error');
-    return;
-  }
-
-  openSteamImportWizard();
-  renderSteamImportList();
 }
 
 function setupSteamImportWizard() {
@@ -1712,7 +1741,12 @@ function setupSettings() {
 }
 
 async function save() {
-  return window.api.saveData(appData);
+  try {
+    return Boolean(await window.api.saveData(appData));
+  } catch (error) {
+    console.error('Save failed:', error);
+    return false;
+  }
 }
 
 const TOAST_DURATION_MS = 3200;
@@ -1787,6 +1821,21 @@ function timeAgo(timestamp) {
   return new Date(timestamp).toLocaleDateString();
 }
 
-init();
+function installGlobalErrorHandlers() {
+  window.addEventListener('error', (event) => {
+    console.error('Renderer runtime error:', event.error || event.message);
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('Renderer unhandled rejection:', event.reason);
+    showToast(event?.reason?.message || event?.reason || 'ERR_UNKNOWN', 'error');
+  });
+}
+
+installGlobalErrorHandlers();
+void init().catch((error) => {
+  console.error('Renderer initialization failed:', error);
+  showToast(error?.message || 'ERR_UNKNOWN', 'error');
+});
 
 
