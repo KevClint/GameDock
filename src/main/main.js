@@ -345,13 +345,13 @@ function removeFileIfExists(filePath) {
   }
 }
 
-function saveImageBufferAsPng(buffer, targetPath, width, height) {
+function saveImageBufferOptimized(buffer, targetPath, width, height) {
   const image = nativeImage.createFromBuffer(buffer);
   if (!image || image.isEmpty()) {
     throw new Error('ERR_IMAGE_INVALID');
   }
   const resized = image.resize({ width, height, quality: 'best' });
-  fs.writeFileSync(targetPath, resized.toPNG());
+  fs.writeFileSync(targetPath, resized.toWebP({ quality: 80 }));
 }
 
 async function fetchBinary(url, timeoutMs = 15000) {
@@ -381,7 +381,7 @@ async function setCustomCoverForGame(gameId, source, value) {
 
   const coverDir = getGameCoverDir(game.id);
   ensureDir(coverDir);
-  const coverPath = path.join(coverDir, 'cover.png');
+  const coverPath = path.join(coverDir, 'cover.webp');
 
   try {
     let buffer;
@@ -395,7 +395,7 @@ async function setCustomCoverForGame(gameId, source, value) {
       return fail('ERR_IMAGE_INVALID');
     }
 
-    saveImageBufferAsPng(buffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
+    saveImageBufferOptimized(buffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
     game.coverPath = coverPath;
     saveAppData();
     return { success: true, coverPath };
@@ -467,8 +467,8 @@ async function downloadSteamArtworkIfNeeded(game, appId, coverUrl, logoUrl) {
   if (coverUrl) {
     try {
       const coverBuffer = await fetchBinary(coverUrl);
-      const coverPath = path.join(artDir, 'cover.png');
-      saveImageBufferAsPng(coverBuffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
+      const coverPath = path.join(artDir, 'cover.webp');
+      saveImageBufferOptimized(coverBuffer, coverPath, COVER_WIDTH, COVER_HEIGHT);
       game.coverPath = coverPath;
     } catch {
       // continue without cover
@@ -478,8 +478,8 @@ async function downloadSteamArtworkIfNeeded(game, appId, coverUrl, logoUrl) {
   if (logoUrl) {
     try {
       const logoBuffer = await fetchBinary(logoUrl);
-      const logoPath = path.join(artDir, 'logo.png');
-      saveImageBufferAsPng(logoBuffer, logoPath, 512, 256);
+      const logoPath = path.join(artDir, 'logo.webp');
+      saveImageBufferOptimized(logoBuffer, logoPath, 512, 256);
       game.logoPath = logoPath;
     } catch {
       // continue without logo
