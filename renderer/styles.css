@@ -588,6 +588,103 @@ button {
   margin-top: auto;
 }
 
+.game-grid.simplified-cards {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.game-grid.simplified-cards .game-card {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(29, 29, 35, 0.94), rgba(34, 34, 34, 0.9));
+}
+
+.game-grid.simplified-cards .game-cover {
+  width: 42px;
+  height: 42px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.game-grid.simplified-cards .play-overlay {
+  display: none;
+}
+
+.game-grid.simplified-cards .game-info {
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  padding-right: 126px;
+}
+
+.game-grid.simplified-cards .game-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.game-grid.simplified-cards .game-meta {
+  gap: 10px;
+  font-size: 11px;
+}
+
+.game-grid.simplified-cards .game-badge {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #8b5cf6;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.game-grid.simplified-cards .game-badge .material-symbols-outlined {
+  display: none;
+}
+
+.game-grid.simplified-cards .game-playtime {
+  display: inline;
+  color: #9ca3af;
+}
+
+.game-grid.simplified-cards .game-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%) translateX(6px);
+  margin-top: 0;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.game-grid.simplified-cards .game-card:hover .game-actions,
+.game-grid.simplified-cards .game-card:focus-within .game-actions,
+.game-grid.simplified-cards .game-card.selected .game-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0);
+}
+
+.game-grid.simplified-cards .game-action-btn {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+}
+
+.game-grid.simplified-cards .game-action-btn .material-symbols-outlined {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+}
+
 .drag-handle {
   cursor: grab;
 }

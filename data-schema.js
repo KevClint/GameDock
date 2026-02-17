@@ -7,6 +7,7 @@ const DEFAULT_DATA = {
     minimizeToTray: true,
     alwaysOnTop: false,
     launchNotifications: true,
+    simplifiedLibraryCards: false,
     opacity: 95,
     activeSessions: {},
   },
@@ -125,6 +126,7 @@ function sanitizeSettings(rawSettings) {
     minimizeToTray: settings.minimizeToTray !== false,
     alwaysOnTop: Boolean(settings.alwaysOnTop),
     launchNotifications: settings.launchNotifications !== false,
+    simplifiedLibraryCards: Boolean(settings.simplifiedLibraryCards),
     opacity: clampNumber(settings.opacity, 95, 30, 100),
     activeSessions,
   };

@@ -1060,7 +1060,8 @@ function createGameCard(game) {
   const card = document.createElement('div');
   const selectionModeActive = selectedGameIds.size > 0;
   const isSelected = selectedGameIds.has(game.id);
-  card.className = ['game-card', game.favorite ? 'favorite' : '', isSelected ? 'selected' : '']
+  const simplifiedCardsEnabled = Boolean(appData.settings?.simplifiedLibraryCards);
+  card.className = ['game-card', simplifiedCardsEnabled ? 'is-simplified' : '', game.favorite ? 'favorite' : '', isSelected ? 'selected' : '']
     .filter(Boolean)
     .join(' ');
   card.id = `game-${game.id}`;
@@ -1116,9 +1117,13 @@ function createGameCard(game) {
   const playtime = document.createElement('span');
   playtime.className = 'game-playtime';
   const total = getPlaytimeMinutes(game);
-  playtime.textContent = total > 0
-    ? formatPlaytime(total)
-    : (game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played');
+  if (simplifiedCardsEnabled) {
+    playtime.textContent = game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Last: never';
+  } else {
+    playtime.textContent = total > 0
+      ? formatPlaytime(total)
+      : (game.lastPlayed ? `Last: ${timeAgo(game.lastPlayed)}` : 'Never played');
+  }
 
   meta.append(badge, playtime);
   info.append(name, meta);
@@ -1206,6 +1211,7 @@ function createGameCard(game) {
 
 function renderGames() {
   const list = document.getElementById('game-list');
+  list.classList.toggle('simplified-cards', Boolean(appData.settings?.simplifiedLibraryCards));
   list.textContent = '';
 
   let games = [...appData.games];
@@ -1623,12 +1629,14 @@ function setupSettings() {
   const autoStartEl = document.getElementById('set-auto-start');
   const minimizeTrayEl = document.getElementById('set-minimize-tray');
   const launchNotificationsEl = document.getElementById('set-launch-notifications');
+  const simplifiedCardsEl = document.getElementById('set-simplified-cards');
   const appVersionEl = document.getElementById('set-app-version');
 
   if (alwaysOnTopEl) alwaysOnTopEl.checked = Boolean(s.alwaysOnTop);
   if (autoStartEl) autoStartEl.checked = Boolean(s.autoStart);
   if (minimizeTrayEl) minimizeTrayEl.checked = s.minimizeToTray !== false;
   if (launchNotificationsEl) launchNotificationsEl.checked = s.launchNotifications !== false;
+  if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(s.simplifiedLibraryCards);
 
   window.api.getAppInfo()
     .then((info) => {
@@ -1644,12 +1652,14 @@ function setupSettings() {
     const autoStart = document.getElementById('set-auto-start').checked;
     const minimizeTray = document.getElementById('set-minimize-tray').checked;
     const launchNotifications = document.getElementById('set-launch-notifications').checked;
+    const simplifiedCards = document.getElementById('set-simplified-cards').checked;
 
     appData.settings = appData.settings || {};
     appData.settings.alwaysOnTop = alwaysOnTop;
     appData.settings.autoStart = autoStart;
     appData.settings.minimizeToTray = minimizeTray;
     appData.settings.launchNotifications = launchNotifications;
+    appData.settings.simplifiedLibraryCards = simplifiedCards;
 
     try {
       if (saveBtn) saveBtn.disabled = true;
@@ -1667,6 +1677,7 @@ function setupSettings() {
       const saved = await save();
       if (!saved) throw new Error('ERR_UNKNOWN');
 
+      renderGames();
       showSaveActionPopup('Settings saved', 'success');
     } catch (err) {
       showToast(err?.message || 'ERR_UNKNOWN', 'error');
@@ -1689,6 +1700,7 @@ function setupSettings() {
       if (autoStartEl) autoStartEl.checked = Boolean(appData.settings?.autoStart);
       if (minimizeTrayEl) minimizeTrayEl.checked = appData.settings?.minimizeToTray !== false;
       if (launchNotificationsEl) launchNotificationsEl.checked = appData.settings?.launchNotifications !== false;
+      if (simplifiedCardsEl) simplifiedCardsEl.checked = Boolean(appData.settings?.simplifiedLibraryCards);
       renderGames();
       showToast('Backup imported', 'success');
     } else if (!res.canceled) {
