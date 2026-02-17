@@ -360,7 +360,6 @@ button {
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-1);
   flex-wrap: wrap;
 }
@@ -369,14 +368,19 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  flex-wrap: wrap;
+  width: 100%;
+  overflow: visible;
+  padding-bottom: 0;
 }
 
 .sort-controls {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  max-width: 100%;
 }
 
 .sort-controls label {
@@ -385,12 +389,18 @@ button {
 }
 
 .sort-controls select {
-  height: 32px;
+  height: 34px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
-  padding: 0 8px;
+  padding: 0 10px;
+  width: clamp(144px, 24vw, 168px);
+  max-width: 100%;
+}
+
+#sort-mode {
+  width: 115px;
 }
 
 .categories::-webkit-scrollbar {
@@ -462,6 +472,20 @@ button {
 .game-card.selected {
   border-color: rgba(139, 92, 246, 0.85);
   box-shadow: inset 0 0 0 1px rgba(139, 92, 246, 0.45);
+}
+
+.game-card.favorite {
+  border-color: rgba(250, 204, 21, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.32);
+}
+
+.game-card.favorite:hover {
+  border-color: rgba(250, 204, 21, 0.95);
+}
+
+.game-card.favorite.selected {
+  border-color: rgba(250, 204, 21, 0.95);
+  box-shadow: inset 0 0 0 1px rgba(250, 204, 21, 0.52);
 }
 
 .game-cover {
@@ -616,6 +640,10 @@ button {
   color: var(--text-muted);
   max-width: 34ch;
   line-height: 1.5;
+}
+
+.empty-state-action {
+  margin-top: 8px;
 }
 
 .delete-bar {
@@ -874,7 +902,10 @@ button {
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
   color: var(--text);
-  padding: 8px 12px;
+  padding: 8px 12px 10px;
+  min-width: 180px;
+  max-width: min(340px, calc(100vw - 24px));
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
   transform: translateY(8px);
@@ -882,13 +913,101 @@ button {
   z-index: 40;
 }
 
+.toast-message {
+  display: block;
+  white-space: normal;
+}
+
+.toast-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(139, 92, 246, 0.95);
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
 .toast.show {
   opacity: 1;
   transform: translateY(0);
 }
 
+.toast.show .toast-progress {
+  animation: toast-progress var(--toast-duration, 3200ms) linear forwards;
+}
+
 .toast.error {
   border-left-color: #ef4444;
+}
+
+.toast.error .toast-progress {
+  background: rgba(239, 68, 68, 0.95);
+}
+
+@keyframes toast-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.save-action-popup {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translate(-50%, 10px);
+  opacity: 0;
+  min-width: 220px;
+  max-width: min(420px, calc(100vw - 28px));
+  padding: 10px 14px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  background: rgba(24, 24, 27, 0.98);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 55;
+  pointer-events: none;
+  overflow: hidden;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.save-action-popup.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.save-action-message {
+  display: block;
+  white-space: normal;
+}
+
+.save-action-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: rgba(139, 92, 246, 0.95);
+  transform-origin: left center;
+  transform: scaleX(1);
+}
+
+.save-action-popup.show .save-action-progress {
+  animation: save-action-progress var(--save-popup-duration, 2600ms) linear forwards;
+}
+
+.save-action-popup.error {
+  border-left-color: #ef4444;
+}
+
+.save-action-popup.error .save-action-progress {
+  background: rgba(239, 68, 68, 0.95);
+}
+
+@keyframes save-action-progress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 .view-panel {

@@ -19,7 +19,7 @@ let communityLoaded = false;
 let communityFeedPage = 1;
 let communityFeedHasMore = false;
 let communityFeedLoadingMore = false;
-const COMMUNITY_PAGE_SIZE = 12;
+const COMMUNITY_PAGE_SIZE = 12; 
 
 const MOCK_COMMUNITY_ARTICLES = [
   {
@@ -520,9 +520,9 @@ function createFeedCard(article) {
     shareBtn.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(a.url);
-        showToast('Link copied', 'success');
+        showSaveActionPopup('Link copied', 'success');
       } catch {
-        showToast('Could not copy link', 'error');
+        showSaveActionPopup('Could not copy link', 'error');
       }
     });
   }
@@ -684,9 +684,9 @@ function setupSearch() {
 }
 
 function setupCategories() {
-  document.querySelectorAll('.cat-btn').forEach((btn) => {
+  document.querySelectorAll('.cat-btn[data-cat]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.cat-btn').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.cat-btn[data-cat]').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       activeCategory = btn.dataset.cat;
       renderGames();
@@ -718,18 +718,16 @@ function deselectGame(id = null) {
 }
 
 function showDeleteBar() {
-  let bar = document.getElementById('delete-bar');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.id = 'delete-bar';
+  const bindDeleteBarHandlers = (container) => {
+    if (!container || container.dataset.handlersBound === 'true') return;
 
-    const name = document.createElement('span');
-    name.id = 'delete-bar-name';
-    bar.appendChild(name);
+    const removeBtn = container.querySelector('#delete-bar-btn');
+    const cancelBtn = container.querySelector('#delete-bar-cancel');
+    if (!removeBtn || !cancelBtn) return;
 
-    const removeBtn = document.createElement('button');
-    removeBtn.id = 'delete-bar-btn';
-    removeBtn.textContent = 'Remove Selected';
+    removeBtn.type = 'button';
+    cancelBtn.type = 'button';
+
     removeBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const ids = [...selectedGameIds];
@@ -745,20 +743,39 @@ function showDeleteBar() {
         deselectGame();
       }
     });
+
+    cancelBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deselectGame();
+    });
+
+    container.dataset.handlersBound = 'true';
+  };
+
+  let bar = document.getElementById('delete-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'delete-bar';
+
+    const name = document.createElement('span');
+    name.id = 'delete-bar-name';
+    bar.appendChild(name);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.id = 'delete-bar-btn';
+    removeBtn.textContent = 'Remove Selected';
     bar.appendChild(removeBtn);
 
     const cancelBtn = document.createElement('button');
     cancelBtn.id = 'delete-bar-cancel';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      deselectGame();
-    });
     bar.appendChild(cancelBtn);
 
     const bottomBar = document.querySelector('.bottom-bar');
     bottomBar.parentNode.insertBefore(bar, bottomBar);
   }
+
+  bindDeleteBarHandlers(bar);
 
   const selectedGames = appData.games.filter((g) => selectedGameIds.has(g.id));
   const title = selectedGames.length === 1
@@ -776,7 +793,7 @@ function hideDeleteBar() {
 function setupSortMode() {
   const select = document.getElementById('sort-mode');
   if (!select) return;
-  const validModes = ['lastPlayed', 'playtime', 'name'];
+  const validModes = ['lastPlayed', 'playtime', 'name', 'favoritesOnly'];
   if (!validModes.includes(sortMode)) {
     sortMode = 'lastPlayed';
     localStorage.setItem('gamedock.sort.mode', sortMode);
@@ -912,6 +929,9 @@ function hideGameContextMenu() {
 }
 
 function gameSort(a, b) {
+  const favoriteDelta = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+  if (favoriteDelta !== 0) return favoriteDelta;
+
   if (sortMode === 'manual') {
     const ao = Number.isFinite(Number(a.sortOrder)) ? Number(a.sortOrder) : Number.MAX_SAFE_INTEGER;
     const bo = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : Number.MAX_SAFE_INTEGER;
@@ -933,7 +953,9 @@ function gameSort(a, b) {
 function createGameCard(game) {
   const card = document.createElement('div');
   const isSelected = selectedGameIds.has(game.id);
-  card.className = `game-card ${isSelected ? 'selected' : ''}`;
+  card.className = ['game-card', game.favorite ? 'favorite' : '', isSelected ? 'selected' : '']
+    .filter(Boolean)
+    .join(' ');
   card.id = `game-${game.id}`;
   card.dataset.gameId = String(game.id);
 
@@ -1078,6 +1100,7 @@ function renderGames() {
   let games = [...appData.games];
   if (activeCategory !== 'all') games = games.filter((g) => g.category === activeCategory);
   if (searchQuery) games = games.filter((g) => g.name.toLowerCase().includes(searchQuery));
+  if (sortMode === 'favoritesOnly') games = games.filter((g) => Boolean(g.favorite));
   games.sort(gameSort);
 
   if (games.length === 0) {
@@ -1091,8 +1114,33 @@ function renderGames() {
     title.textContent = 'No Games';
     const text = document.createElement('p');
     text.className = 'empty-state-text';
-    text.textContent = searchQuery ? 'No games match your search' : 'No games yet. Add one below.';
+    if (searchQuery) {
+      text.textContent = 'No games match your search';
+    } else if (sortMode === 'favoritesOnly') {
+      text.textContent = 'No favorite games yet. Star a game to pin it here.';
+    } else if (activeCategory !== 'all') {
+      text.textContent = `No ${activeCategory} games yet.`;
+    } else {
+      text.textContent = 'No games yet. Add one below.';
+    }
     empty.append(icon, title, text);
+
+    if (!searchQuery && sortMode !== 'favoritesOnly') {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'btn-primary empty-state-action';
+      const addLabel = activeCategory !== 'all' ? `Add ${activeCategory} Game` : 'Add Game';
+      addBtn.innerHTML = `<span class="material-symbols-outlined">add</span><span>${escapeHtml(addLabel)}</span>`;
+      addBtn.addEventListener('click', () => {
+        document.getElementById('btn-add-game')?.click();
+        if (activeCategory !== 'all') {
+          const categorySelect = document.getElementById('game-category');
+          if (categorySelect) categorySelect.value = activeCategory;
+        }
+      });
+      empty.appendChild(addBtn);
+    }
+
     list.appendChild(empty);
     return;
   }
@@ -1411,7 +1459,7 @@ function setupAddGame() {
       appData = await window.api.getData();
       renderGames();
       closeModal();
-      showToast(`${name} updated`, 'success');
+      showSaveActionPopup(`${name} updated`, 'success');
       return;
     }
 
@@ -1457,7 +1505,8 @@ function setupAddGame() {
 }
 
 function setupSettings() {
-  const s = appData.settings || {};
+  appData.settings = appData.settings || {};
+  const s = appData.settings;
   const alwaysOnTopEl = document.getElementById('set-always-on-top');
   const autoStartEl = document.getElementById('set-auto-start');
   const minimizeTrayEl = document.getElementById('set-minimize-tray');
@@ -1478,20 +1527,40 @@ function setupSettings() {
     });
 
   document.getElementById('btn-save-settings').onclick = async () => {
+    const saveBtn = document.getElementById('btn-save-settings');
     const alwaysOnTop = document.getElementById('set-always-on-top').checked;
     const autoStart = document.getElementById('set-auto-start').checked;
     const minimizeTray = document.getElementById('set-minimize-tray').checked;
     const launchNotifications = document.getElementById('set-launch-notifications').checked;
 
+    appData.settings = appData.settings || {};
     appData.settings.alwaysOnTop = alwaysOnTop;
     appData.settings.autoStart = autoStart;
     appData.settings.minimizeToTray = minimizeTray;
     appData.settings.launchNotifications = launchNotifications;
 
-    await window.api.toggleAlwaysOnTop(alwaysOnTop);
-    await window.api.toggleAutoStart(autoStart);
-    await save();
-    showToast('Settings saved', 'success');
+    try {
+      if (saveBtn) saveBtn.disabled = true;
+
+      const topRes = await window.api.toggleAlwaysOnTop(alwaysOnTop);
+      if (topRes && typeof topRes === 'object' && topRes.success === false) {
+        throw new Error(topRes.error || 'ERR_UNKNOWN');
+      }
+
+      const autoStartRes = await window.api.toggleAutoStart(autoStart);
+      if (autoStartRes && typeof autoStartRes === 'object' && autoStartRes.success === false) {
+        throw new Error(autoStartRes.error || 'ERR_UNKNOWN');
+      }
+
+      const saved = await save();
+      if (!saved) throw new Error('ERR_UNKNOWN');
+
+      showSaveActionPopup('Settings saved', 'success');
+    } catch (err) {
+      showToast(err?.message || 'ERR_UNKNOWN', 'error');
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
   };
 
   document.getElementById('btn-export-backup').onclick = async () => {
@@ -1517,21 +1586,66 @@ function setupSettings() {
 }
 
 async function save() {
-  await window.api.saveData(appData);
+  return window.api.saveData(appData);
 }
 
+const TOAST_DURATION_MS = 3200;
 let toastTimeout;
 function showToast(message, type = 'success') {
   let toast = document.querySelector('.toast');
   if (!toast) {
     toast = document.createElement('div');
     toast.className = 'toast';
+    toast.innerHTML = '<span class="toast-message"></span><span class="toast-progress" aria-hidden="true"></span>';
     document.body.appendChild(toast);
   }
-  toast.textContent = resolveErrorText(message, type === 'error');
-  toast.className = `toast ${type} show`;
+
+  let messageEl = toast.querySelector('.toast-message');
+  let progressEl = toast.querySelector('.toast-progress');
+  if (!messageEl || !progressEl) {
+    toast.innerHTML = '<span class="toast-message"></span><span class="toast-progress" aria-hidden="true"></span>';
+    messageEl = toast.querySelector('.toast-message');
+    progressEl = toast.querySelector('.toast-progress');
+  }
+
+  messageEl.textContent = resolveErrorText(message, type === 'error');
+  toast.className = `toast ${type}`;
+  toast.style.setProperty('--toast-duration', `${TOAST_DURATION_MS}ms`);
+
+  // Restart enter + countdown animation on repeated toasts.
+  if (progressEl) progressEl.style.animation = 'none';
+  void toast.offsetWidth;
+  if (progressEl) progressEl.style.animation = '';
+  toast.classList.add('show');
+
   clearTimeout(toastTimeout);
-  toastTimeout = setTimeout(() => toast.classList.remove('show'), 3200);
+  toastTimeout = setTimeout(() => toast.classList.remove('show'), TOAST_DURATION_MS);
+}
+
+const SAVE_POPUP_DURATION_MS = 2600;
+let savePopupTimeout;
+function showSaveActionPopup(message, type = 'success') {
+  let popup = document.querySelector('.save-action-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.className = 'save-action-popup';
+    popup.innerHTML = '<span class="save-action-message"></span><span class="save-action-progress" aria-hidden="true"></span>';
+    document.body.appendChild(popup);
+  }
+
+  const messageEl = popup.querySelector('.save-action-message');
+  const progressEl = popup.querySelector('.save-action-progress');
+  if (messageEl) messageEl.textContent = resolveErrorText(message, type === 'error');
+  popup.className = `save-action-popup ${type}`;
+  popup.style.setProperty('--save-popup-duration', `${SAVE_POPUP_DURATION_MS}ms`);
+
+  if (progressEl) progressEl.style.animation = 'none';
+  void popup.offsetWidth;
+  if (progressEl) progressEl.style.animation = '';
+  popup.classList.add('show');
+
+  clearTimeout(savePopupTimeout);
+  savePopupTimeout = setTimeout(() => popup.classList.remove('show'), SAVE_POPUP_DURATION_MS);
 }
 
 function timeAgo(timestamp) {

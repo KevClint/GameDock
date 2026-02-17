@@ -593,7 +593,7 @@ function createWindow() {
     y,
     frame: false,
     resizable: true,
-    alwaysOnTop: false,
+    alwaysOnTop: Boolean(appData.settings?.alwaysOnTop),
     skipTaskbar: false,
     transparent: false,
     backgroundColor: '#0f0f0f',
@@ -996,16 +996,20 @@ ipcMain.on('window-close', () => {
 });
 
 ipcMain.handle('toggle-always-on-top', (_, val) => {
-  mainWindow.setAlwaysOnTop(Boolean(val));
-  appData.settings.alwaysOnTop = Boolean(val);
+  const enabled = Boolean(val);
+  if (!mainWindow || mainWindow.isDestroyed()) return fail('ERR_UNKNOWN');
+  mainWindow.setAlwaysOnTop(enabled);
+  appData.settings = appData.settings || {};
+  appData.settings.alwaysOnTop = enabled;
   saveAppData();
-  return Boolean(val);
+  return { success: true, value: enabled };
 });
 
 ipcMain.handle('toggle-auto-start', (_, enable) => {
   const flag = Boolean(enable);
   app.setLoginItemSettings({ openAtLogin: flag, path: process.execPath });
+  appData.settings = appData.settings || {};
   appData.settings.autoStart = flag;
   saveAppData();
-  return flag;
+  return { success: true, value: flag };
 });
