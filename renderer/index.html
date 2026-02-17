@@ -127,6 +127,13 @@
           </div>
 
           <div id="discovery-content" class="is-hidden" hidden>
+            <div class="view-block-header">
+              <h3>Discover Feed</h3>
+              <button id="btn-discovery-refresh" class="btn-secondary" type="button">
+                <span class="material-symbols-outlined">refresh</span>
+                <span class="discovery-refresh-label">Refresh</span>
+              </button>
+            </div>
             <div id="discovery-hero"></div>
             <div class="view-block-header">
               <h3>Trending Games</h3>
@@ -138,6 +145,16 @@
               <span class="meta-text">Deal of the day alternatives</span>
             </div>
             <div id="discovery-grid-indie" class="discovery-grid"></div>
+            <div class="view-block-header">
+              <h3>Upcoming Releases</h3>
+              <span class="meta-text">What is launching soon</span>
+            </div>
+            <div id="discovery-grid-upcoming" class="discovery-grid"></div>
+            <div class="view-block-header">
+              <h3>Top Rated Classics</h3>
+              <span class="meta-text">High-score picks worth trying</span>
+            </div>
+            <div id="discovery-grid-top-rated" class="discovery-grid"></div>
           </div>
         </div>
       </section>
@@ -151,7 +168,46 @@
               </h3>
               <span class="meta-text">Latest gaming headlines</span>
             </div>
+            <div id="community-loading" class="community-loading is-hidden" hidden>
+              <article class="feed-card community-skeleton-card">
+                <div class="community-skeleton-line community-skeleton-source skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title short skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet short skeleton shimmer"></div>
+              </article>
+              <article class="feed-card community-skeleton-card">
+                <div class="community-skeleton-line community-skeleton-source skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title short skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet short skeleton shimmer"></div>
+              </article>
+              <article class="feed-card community-skeleton-card">
+                <div class="community-skeleton-line community-skeleton-source skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title short skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet short skeleton shimmer"></div>
+              </article>
+            </div>
             <div id="community-feed-list" class="community-feed-list"></div>
+            <div id="community-loading-more" class="community-loading-more is-hidden" hidden>
+              <article class="feed-card community-skeleton-card">
+                <div class="community-skeleton-line community-skeleton-source skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title short skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet short skeleton shimmer"></div>
+              </article>
+              <article class="feed-card community-skeleton-card">
+                <div class="community-skeleton-line community-skeleton-source skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-title short skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet skeleton shimmer"></div>
+                <div class="community-skeleton-line community-skeleton-snippet short skeleton shimmer"></div>
+              </article>
+            </div>
             <div class="community-feed-actions">
               <button type="button" id="community-feed-more" class="btn-secondary" hidden>Show More</button>
             </div>

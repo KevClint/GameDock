@@ -783,6 +783,10 @@ ipcMain.handle('rawg-discovery-games', async () => {
   }
 
   const currentYear = new Date().getFullYear();
+  const today = new Date();
+  const sixMonthsOut = new Date(today.getTime() + 180 * 24 * 60 * 60 * 1000);
+  const todayIso = today.toISOString().slice(0, 10);
+  const sixMonthsIso = sixMonthsOut.toISOString().slice(0, 10);
   const trendingParams = new URLSearchParams({
     key: apiKey,
     page_size: '10',
@@ -796,24 +800,40 @@ ipcMain.handle('rawg-discovery-games', async () => {
     ordering: '-metacritic',
     metacritic: '70,100',
   });
+  const upcomingParams = new URLSearchParams({
+    key: apiKey,
+    page_size: '6',
+    dates: `${todayIso},${sixMonthsIso}`,
+    ordering: '-added',
+  });
+  const topRatedParams = new URLSearchParams({
+    key: apiKey,
+    page_size: '6',
+    ordering: '-metacritic',
+    metacritic: '80,100',
+  });
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-    const [trendingRes, indieRes] = await Promise.all([
+    const [trendingRes, indieRes, upcomingRes, topRatedRes] = await Promise.all([
       fetch(`https://api.rawg.io/api/games?${trendingParams.toString()}`, { signal: controller.signal }),
       fetch(`https://api.rawg.io/api/games?${indieParams.toString()}`, { signal: controller.signal }),
+      fetch(`https://api.rawg.io/api/games?${upcomingParams.toString()}`, { signal: controller.signal }),
+      fetch(`https://api.rawg.io/api/games?${topRatedParams.toString()}`, { signal: controller.signal }),
     ]);
     clearTimeout(timeoutId);
 
-    if (!trendingRes.ok || !indieRes.ok) {
+    if (!trendingRes.ok || !indieRes.ok || !upcomingRes.ok || !topRatedRes.ok) {
       return fail('ERR_RAWG_API_FAIL');
     }
 
-    const [trendingJson, indieJson] = await Promise.all([
+    const [trendingJson, indieJson, upcomingJson, topRatedJson] = await Promise.all([
       trendingRes.json(),
       indieRes.json(),
+      upcomingRes.json(),
+      topRatedRes.json(),
     ]);
 
     return {
@@ -821,6 +841,8 @@ ipcMain.handle('rawg-discovery-games', async () => {
       data: {
         trending: trendingJson?.results || [],
         indie: indieJson?.results || [],
+        upcoming: upcomingJson?.results || [],
+        topRated: topRatedJson?.results || [],
       },
     };
   } catch {
@@ -864,8 +886,11 @@ ipcMain.handle('community-news', async (_, payload) => {
       url: item?.url || '',
       publishedAt: item?.publishedAt || '',
     }));
-    const totalResults = Number(responsePayload?.totalResults) || 0;
-    const hasMore = articles.length === pageSize && (page * pageSize) < totalResults;
+    const totalResults = Number(responsePayload?.totalResults);
+    const hasMoreByTotal = Number.isFinite(totalResults) && totalResults > 0
+      ? (page * pageSize) < totalResults
+      : false;
+    const hasMore = hasMoreByTotal || articles.length >= pageSize;
 
     return { success: true, articles, page, pageSize, totalResults, hasMore };
   } catch {

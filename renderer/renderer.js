@@ -76,11 +76,26 @@ async function init() {
 
 function setupDiscovery() {
   const retryBtn = document.getElementById('btn-discovery-retry');
+  const refreshBtn = document.getElementById('btn-discovery-refresh');
   if (retryBtn) {
     retryBtn.addEventListener('click', () => {
       void loadDiscovery(true);
     });
   }
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      void loadDiscovery(true);
+    });
+  }
+  setDiscoveryRefreshButtonState(false);
+}
+
+function setDiscoveryRefreshButtonState(isLoading) {
+  const refreshBtn = document.getElementById('btn-discovery-refresh');
+  if (!refreshBtn) return;
+  refreshBtn.disabled = Boolean(isLoading);
+  const label = refreshBtn.querySelector('.discovery-refresh-label');
+  if (label) label.textContent = isLoading ? 'Refreshing...' : 'Refresh';
 }
 
 function setupNavigation() {
@@ -204,6 +219,8 @@ function getDiscoveryDataHash(data) {
     heroId: data?.hero?.id || null,
     trendingIds: (data?.trending || []).map((g) => g.id),
     indieIds: (data?.indie || []).map((g) => g.id),
+    upcomingIds: (data?.upcoming || []).map((g) => g.id),
+    topRatedIds: (data?.topRated || []).map((g) => g.id),
   };
   return JSON.stringify(payload);
 }
@@ -242,7 +259,7 @@ async function fetchWithCache(url, fetcher) {
   return { data: fresh, fromCache: false, stale: false, hash: getDiscoveryDataHash(fresh) };
 }
 
-async function fetchDiscoveryGames() {
+async function fetchDiscoveryGames({ forceNetwork = false } = {}) {
   const sourceUrl = 'rawg://discovery';
   const cachedRecord = readDiscoveryCache();
 
@@ -257,12 +274,22 @@ async function fetchDiscoveryGames() {
 
     const trending = (response.data?.trending || []).map(normalizeDiscoveryGame).slice(0, 10);
     const indie = (response.data?.indie || []).map(normalizeDiscoveryGame).slice(0, 5);
+    const upcoming = (response.data?.upcoming || []).map(normalizeDiscoveryGame).slice(0, 6);
+    const topRated = (response.data?.topRated || []).map(normalizeDiscoveryGame).slice(0, 6);
     return {
       hero: trending[0] || null,
       trending: trending.slice(1),
       indie,
+      upcoming,
+      topRated,
     };
   };
+
+  if (forceNetwork) {
+    const freshData = await networkFetcher();
+    writeDiscoveryCache(freshData);
+    return freshData;
+  }
 
   const cachedResult = await fetchWithCache(sourceUrl, networkFetcher);
 
@@ -371,9 +398,13 @@ function teardownDiscoveryView() {
   const heroEl = document.getElementById('discovery-hero');
   const trendingGrid = document.getElementById('discovery-grid-trending');
   const indieGrid = document.getElementById('discovery-grid-indie');
+  const upcomingGrid = document.getElementById('discovery-grid-upcoming');
+  const topRatedGrid = document.getElementById('discovery-grid-top-rated');
   if (heroEl) heroEl.textContent = '';
   if (trendingGrid) trendingGrid.textContent = '';
   if (indieGrid) indieGrid.textContent = '';
+  if (upcomingGrid) upcomingGrid.textContent = '';
+  if (topRatedGrid) topRatedGrid.textContent = '';
   discoveryLoaded = false;
 }
 
@@ -381,19 +412,25 @@ function renderGameCards(data) {
   const heroEl = document.getElementById('discovery-hero');
   const trendingGrid = document.getElementById('discovery-grid-trending');
   const indieGrid = document.getElementById('discovery-grid-indie');
+  const upcomingGrid = document.getElementById('discovery-grid-upcoming');
+  const topRatedGrid = document.getElementById('discovery-grid-top-rated');
   const trendingMeta = document.getElementById('discovery-meta-trending');
 
-  if (!heroEl || !trendingGrid || !indieGrid) return;
+  if (!heroEl || !trendingGrid || !indieGrid || !upcomingGrid || !topRatedGrid) return;
 
   heroEl.innerHTML = '';
   trendingGrid.innerHTML = '';
   indieGrid.innerHTML = '';
+  upcomingGrid.innerHTML = '';
+  topRatedGrid.innerHTML = '';
   clearDiscoveryEntryTimers();
 
   const normalizedData = {
     hero: data?.hero ? normalizeDiscoveryGame(data.hero) : null,
     trending: Array.isArray(data?.trending) ? data.trending.map(normalizeDiscoveryGame) : [],
     indie: Array.isArray(data?.indie) ? data.indie.map(normalizeDiscoveryGame) : [],
+    upcoming: Array.isArray(data?.upcoming) ? data.upcoming.map(normalizeDiscoveryGame) : [],
+    topRated: Array.isArray(data?.topRated) ? data.topRated.map(normalizeDiscoveryGame) : [],
   };
 
   if (normalizedData.hero) {
@@ -444,12 +481,26 @@ function renderGameCards(data) {
   });
   indieGrid.appendChild(indieFrag);
 
+  const upcomingFrag = document.createDocumentFragment();
+  normalizedData.upcoming.forEach((game) => {
+    upcomingFrag.appendChild(createDiscoveryCardNode(game));
+  });
+  upcomingGrid.appendChild(upcomingFrag);
+
+  const topRatedFrag = document.createDocumentFragment();
+  normalizedData.topRated.forEach((game) => {
+    topRatedFrag.appendChild(createDiscoveryCardNode(game));
+  });
+  topRatedGrid.appendChild(topRatedFrag);
+
   if (trendingMeta) {
     trendingMeta.textContent = `Top ${normalizedData.trending.length + (normalizedData.hero ? 1 : 0)} this year`;
   }
 
   staggerRevealCards(trendingGrid);
   staggerRevealCards(indieGrid);
+  staggerRevealCards(upcomingGrid);
+  staggerRevealCards(topRatedGrid);
 }
 
 function setDiscoveryUiState(state) {
@@ -499,6 +550,13 @@ function normalizeArticle(article) {
   };
 }
 
+function resolveCommunityHasMore(res) {
+  const explicit = res?.hasMore;
+  if (typeof explicit === 'boolean' && explicit) return true;
+  const count = Array.isArray(res?.articles) ? res.articles.length : 0;
+  return count >= COMMUNITY_PAGE_SIZE;
+}
+
 function createFeedCard(article) {
   const a = normalizeArticle(article);
   const card = document.createElement('article');
@@ -514,6 +572,17 @@ function createFeedCard(article) {
       </button>
     </div>
   `;
+
+  const readMoreLink = card.querySelector('.feed-read');
+  if (readMoreLink) {
+    readMoreLink.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const result = await window.api.openExternalUrl?.(a.url);
+      if (!result?.success) {
+        showToast(result?.error || 'ERR_UNKNOWN', 'error');
+      }
+    });
+  }
 
   const shareBtn = card.querySelector('.feed-share');
   if (shareBtn) {
@@ -572,12 +641,37 @@ function updateCommunityFeedMoreButton() {
   btn.hidden = !communityFeedHasMore;
 }
 
+function setCommunityUiState(state) {
+  const loading = document.getElementById('community-loading');
+  const list = document.getElementById('community-feed-list');
+  const loadingMore = document.getElementById('community-loading-more');
+  if (!loading || !list) return;
+  const loadingActive = state === 'loading';
+  loading.hidden = !loadingActive;
+  list.hidden = loadingActive;
+  loading.classList.toggle('is-hidden', !loadingActive);
+  list.classList.toggle('is-hidden', loadingActive);
+  if (loadingMore && loadingActive) {
+    loadingMore.hidden = true;
+    loadingMore.classList.add('is-hidden');
+  }
+}
+
+function setCommunityMoreLoadingState(isLoading) {
+  const loadingMore = document.getElementById('community-loading-more');
+  if (!loadingMore) return;
+  loadingMore.hidden = !isLoading;
+  loadingMore.classList.toggle('is-hidden', !isLoading);
+}
+
 function setupCommunityFeed() {
   const btn = document.getElementById('community-feed-more');
   if (!btn) return;
   btn.addEventListener('click', () => {
     void loadMoreCommunityNews();
   });
+  setCommunityUiState('content');
+  setCommunityMoreLoadingState(false);
   updateCommunityFeedMoreButton();
 }
 
@@ -585,6 +679,7 @@ async function loadMoreCommunityNews() {
   if (communityFeedLoadingMore || !communityFeedHasMore) return;
 
   communityFeedLoadingMore = true;
+  setCommunityMoreLoadingState(true);
   updateCommunityFeedMoreButton();
   const nextPage = communityFeedPage + 1;
 
@@ -597,7 +692,7 @@ async function loadMoreCommunityNews() {
     if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
       renderNewsFeed(res.articles, { append: true });
       communityFeedPage = nextPage;
-      communityFeedHasMore = Boolean(res.hasMore);
+      communityFeedHasMore = resolveCommunityHasMore(res);
       return;
     }
 
@@ -608,6 +703,7 @@ async function loadMoreCommunityNews() {
     showToast(err?.message || 'ERR_NEWS_API_FAIL', 'error');
   } finally {
     communityFeedLoadingMore = false;
+    setCommunityMoreLoadingState(false);
     updateCommunityFeedMoreButton();
   }
 }
@@ -617,6 +713,8 @@ async function loadCommunityNews(force = false) {
   communityFeedPage = 1;
   communityFeedHasMore = false;
   communityFeedLoadingMore = false;
+  setCommunityUiState('loading');
+  setCommunityMoreLoadingState(false);
   updateCommunityFeedMoreButton();
 
   try {
@@ -626,7 +724,7 @@ async function loadCommunityNews(force = false) {
     });
     if (res?.success && Array.isArray(res.articles) && res.articles.length > 0) {
       renderNewsFeed(res.articles);
-      communityFeedHasMore = Boolean(res.hasMore);
+      communityFeedHasMore = resolveCommunityHasMore(res);
     } else {
       renderNewsFeed(MOCK_COMMUNITY_ARTICLES);
       communityFeedHasMore = false;
@@ -638,16 +736,22 @@ async function loadCommunityNews(force = false) {
     communityFeedHasMore = false;
   } finally {
     communityLoaded = true;
+    setCommunityUiState('content');
     updateCommunityFeedMoreButton();
   }
 }
 
 async function loadDiscovery(forceRefresh = false) {
   if (discoveryLoading) return;
-  if (discoveryLoaded && !forceRefresh) return;
+  if (discoveryLoaded && !forceRefresh) {
+    setDiscoveryRefreshButtonState(false);
+    return;
+  }
 
   const cached = readDiscoveryCache();
-  if (cached?.data) {
+  if (forceRefresh) {
+    setDiscoveryUiState('loading');
+  } else if (cached?.data) {
     renderGameCards(cached.data);
     setDiscoveryUiState('content');
   } else {
@@ -655,9 +759,10 @@ async function loadDiscovery(forceRefresh = false) {
   }
 
   discoveryLoading = true;
+  setDiscoveryRefreshButtonState(true);
 
   try {
-    const data = await fetchDiscoveryGames();
+    const data = await fetchDiscoveryGames({ forceNetwork: forceRefresh });
     renderGameCards(data);
     setDiscoveryUiState('content');
     setDiscoveryOfflineMessage('');
@@ -668,6 +773,7 @@ async function loadDiscovery(forceRefresh = false) {
     setDiscoveryUiState('offline');
   } finally {
     discoveryLoading = false;
+    setDiscoveryRefreshButtonState(false);
   }
 }
 
@@ -952,6 +1058,7 @@ function gameSort(a, b) {
 
 function createGameCard(game) {
   const card = document.createElement('div');
+  const selectionModeActive = selectedGameIds.size > 0;
   const isSelected = selectedGameIds.has(game.id);
   card.className = ['game-card', game.favorite ? 'favorite' : '', isSelected ? 'selected' : '']
     .filter(Boolean)
@@ -983,6 +1090,10 @@ function createGameCard(game) {
   playBtn.innerHTML = '<span class="material-symbols-outlined">play_arrow</span>';
   playBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    if (selectionModeActive) {
+      toggleGameSelection(game.id);
+      return;
+    }
     launchGame(game);
   });
   playOverlay.appendChild(playBtn);
@@ -1080,7 +1191,7 @@ function createGameCard(game) {
   card.addEventListener('click', (e) => {
     e.stopPropagation();
     if (e.target.closest('.drag-handle')) return;
-    if (selectedGameIds.size > 0) toggleGameSelection(game.id);
+    if (selectionModeActive) toggleGameSelection(game.id);
     else launchGame(game);
   });
 
@@ -1152,6 +1263,7 @@ function renderGames() {
 }
 
 async function launchGame(game) {
+  if (selectedGameIds.size > 0) return;
   showToast(`Launching ${game.name}...`, 'success');
   const result = await window.api.launchGame(game);
 

@@ -1343,6 +1343,55 @@ button {
   gap: var(--space-1);
 }
 
+.community-loading {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.community-loading-more {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.community-loading.is-hidden {
+  display: none;
+}
+
+.community-feed-list.is-hidden {
+  display: none;
+}
+
+.community-skeleton-card {
+  pointer-events: none;
+}
+
+.community-skeleton-line {
+  border-radius: 999px;
+}
+
+.community-skeleton-source {
+  width: 36%;
+  height: 11px;
+}
+
+.community-skeleton-title {
+  width: 86%;
+  height: 16px;
+}
+
+.community-skeleton-title.short {
+  width: 62%;
+}
+
+.community-skeleton-snippet {
+  width: 94%;
+  height: 12px;
+}
+
+.community-skeleton-snippet.short {
+  width: 74%;
+}
+
 .community-feed-actions {
   display: flex;
   justify-content: center;
