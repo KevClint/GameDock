@@ -1,9 +1,9 @@
 {
   "name": "gamedock",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Minimalist widget-style game launcher",
   "author": "kevclint",
-  "main": "main.js",
+  "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder --win --x64"
@@ -30,7 +30,8 @@
     "files": [
       "**/*",
       "!node_modules/.cache",
-      "!*.md"
+      "!*.md",
+      "!docs/**"
     ]
   }
 }

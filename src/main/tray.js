@@ -1,4 +1,4 @@
-const { Tray, Menu, nativeImage } = require('electron');
+const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -27,9 +27,10 @@ function buildQuickLaunchItems(getData, launchGameById) {
 }
 
 function createTray(mainWindow, getData, launchGameById) {
+  const appRoot = app.getAppPath();
   const iconCandidates = [
-    path.join(__dirname, 'assets', 'tray-icon.png'),
-    path.join(__dirname, 'assets', 'icon.ico')
+    path.join(appRoot, 'assets', 'tray-icon.png'),
+    path.join(appRoot, 'assets', 'icon.ico')
   ];
 
   const iconPath = iconCandidates.find((p) => fs.existsSync(p));

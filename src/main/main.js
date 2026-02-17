@@ -609,7 +609,7 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadFile('renderer/index.html');
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
   mainWindow.on('moved', () => {
     const { x: snapX, y: snapY } = getWindowPosition();
